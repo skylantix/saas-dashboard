@@ -1,0 +1,201 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Skylantix!</title>
+    <link rel="icon" type="image/png" href="{% static 'dashboard/favicon.png' %}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --secondary: #38bdf8;
+            --bg-gradient: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 50%, #ede9fe 100%);
+            --card-bg: rgba(255, 255, 255, 0.7);
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --success: #10b981;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            background: var(--bg-gradient);
+            color: var(--text-dark);
+            display: flex;
+            flex-direction: column;
+        }
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 520px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .logo img {
+            height: 80px;
+            width: auto;
+        }
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 48px 40px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            text-align: center;
+        }
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--success), #34d399);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+        .success-icon svg {
+            width: 40px;
+            height: 40px;
+            color: white;
+        }
+        .card h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .card p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .email-highlight {
+            background: #f1f5f9;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 24px;
+            display: inline-block;
+        }
+        .next-steps {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 24px 0;
+            text-align: left;
+        }
+        .next-steps h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+        }
+        .next-steps ol {
+            margin: 0;
+            padding-left: 20px;
+            color: var(--text-muted);
+        }
+        .next-steps li {
+            padding: 6px 0;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px 32px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+        }
+        .footer {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 40px 20px;
+            margin: 40px auto 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            max-width: 1200px;
+            width: 100%;
+            text-align: center;
+        }
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .footer-links {
+            display: flex;
+            gap: 20px;
+        }
+    </style>
+</head>
+<body>
+    <main class="main">
+        <div class="container">
+            <div class="logo">
+                <img src="{% static 'dashboard/logo.png' %}" alt="Skylantix">
+            </div>
+            <div class="card">
+                <div class="success-icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+                <h1>Welcome, {{ first_name }}!</h1>
+                <p>Your Skylantix account has been created successfully.</p>
+                
+                <div class="email-highlight">{{ email }}</div>
+                
+                <div class="next-steps">
+                    <h3>Next Steps</h3>
+                    <ol>
+                        <li>Check your email for a password setup link</li>
+                        <li>Set your password to activate your account</li>
+                        <li>Log in to your new Skylantix dashboard</li>
+                    </ol>
+                </div>
+                
+                <a href="/" class="btn">Go to Login</a>
+            </div>
+        </div>
+    </main>
+    
+    {% include "partials/footer.html" %}
+</body>
+</html>

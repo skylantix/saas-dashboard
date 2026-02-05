@@ -1,0 +1,163 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Choose Your Plan - Skylantix</title>
+    <link rel="icon" type="image/png" href="{% static 'dashboard/favicon.png' %}" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --primary: #6366f1; --primary-light: #818cf8; --secondary: #38bdf8; --secondary-light: #7dd3fc; --bg-gradient: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 50%, #ede9fe 100%); --card-bg: rgba(255, 255, 255, 0.7); --text-dark: #1e293b; --text-muted: #64748b; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; background: var(--bg-gradient); color: var(--text-dark); display: flex; flex-direction: column; }
+        .main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+        .container { width: 100%; max-width: 1100px; }
+        .logo { text-align: center; margin-bottom: 40px; }
+        .logo img { height: 80px; width: auto; }
+        .header { text-align: center; margin-bottom: 32px; }
+        .header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 8px; }
+        .header h1 span { background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .header p { color: var(--text-muted); font-size: 1.1rem; }
+        .billing-toggle { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 40px; }
+        .billing-option { font-size: 1rem; font-weight: 500; color: var(--text-muted); transition: color 0.2s; }
+        .billing-option.active { color: var(--text-dark); }
+        .billing-option .save-badge { display: inline-block; background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
+        .toggle-switch { position: relative; width: 56px; height: 30px; background: #e2e8f0; border-radius: 15px; cursor: pointer; transition: background 0.3s; }
+        .toggle-switch.annual { background: linear-gradient(135deg, var(--primary), var(--primary-light)); }
+        .toggle-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; background: white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: transform 0.3s; }
+        .toggle-switch.annual::after { transform: translateX(26px); }
+        .plans-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        @media (max-width: 900px) { .plans-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; } }
+        .plan-card { background: var(--card-bg); backdrop-filter: blur(10px); border-radius: 24px; padding: 32px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 2px solid transparent; transition: all 0.3s; display: flex; flex-direction: column; cursor: pointer; }
+        .plan-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(99, 102, 241, 0.15); }
+        .plan-card.featured { border-color: var(--primary-light); }
+        .plan-card.selected { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+        .plan-card.coming-soon { cursor: default; opacity: 0.7; }
+        .plan-card.coming-soon:hover { transform: none; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+        .plan-name { font-size: 1.25rem; font-weight: 700; margin-bottom: 4px; }
+        .plan-tagline { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px; }
+        .plan-price { margin-bottom: 8px; }
+        .plan-price .amount { font-size: 2rem; font-weight: 700; }
+        .plan-price .period { color: var(--text-muted); font-size: 1rem; }
+        .plan-price-alt { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 20px; min-height: 1.2em; }
+        .plan-features { flex: 1; margin-bottom: 20px; }
+        .plan-features ul { list-style: none; }
+        .plan-features li { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; font-size: 0.9rem; line-height: 1.4; }
+        .plan-features li svg { width: 18px; height: 18px; color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+        .plan-footer-text { color: var(--text-muted); font-size: 0.85rem; font-style: italic; margin-bottom: 16px; text-align: center; }
+        .plan-select-indicator { text-align: center; padding: 14px; border-radius: 12px; font-weight: 600; color: var(--primary); background: white; border: 2px solid var(--primary); cursor: pointer; transition: all 0.2s; }
+        .plan-card.selected .plan-select-indicator { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; }
+        .plan-card.coming-soon .plan-select-indicator { background: #e2e8f0; border-color: #e2e8f0; color: var(--text-muted); cursor: default; }
+        .addons-section { margin-top: 48px; padding-top: 32px; border-top: 1px solid rgba(99, 102, 241, 0.2); }
+        .section-header { text-align: center; margin-bottom: 24px; }
+        .section-header h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
+        .section-header p { color: var(--text-muted); font-size: 0.9rem; }
+        /* More services: use a responsive two-column grid that matches the plan width */
+        .addons-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            width: 100%;
+        }
+        @media (max-width: 900px) {
+            .addons-list {
+                grid-template-columns: 1fr;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+        }
+        .addon-card { background: var(--card-bg); backdrop-filter: blur(10px); border-radius: 16px; padding: 20px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 2px solid transparent; transition: all 0.2s; cursor: pointer; display: flex; align-items: center; gap: 16px; }
+        .addon-card:hover { border-color: var(--primary-light); }
+        .addon-card.selected { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+        .addon-card.coming-soon { opacity: 0.6; cursor: default; }
+        .addon-card.coming-soon:hover { border-color: transparent; }
+        .addon-checkbox { width: 24px; height: 24px; border: 2px solid #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .addon-card.selected .addon-checkbox { background: var(--primary); border-color: var(--primary); }
+        .addon-checkbox svg { width: 14px; height: 14px; color: white; opacity: 0; }
+        .addon-card.selected .addon-checkbox svg { opacity: 1; }
+        .addon-icon { width: 44px; height: 44px; background: linear-gradient(135deg, var(--primary-light), var(--secondary-light)); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .addon-icon svg { width: 22px; height: 22px; color: white; }
+        .addon-card.coming-soon .addon-icon { background: linear-gradient(135deg, #94a3b8, #64748b); }
+        .addon-info { flex: 1; }
+        .addon-name { font-size: 1rem; font-weight: 600; margin-bottom: 2px; }
+        .addon-description { color: var(--text-muted); font-size: 0.85rem; }
+        .addon-price { font-size: 0.95rem; font-weight: 600; color: var(--primary); white-space: nowrap; }
+        .addon-card.coming-soon .addon-price { color: var(--text-muted); }
+        .continue-section { margin-top: 40px; text-align: center; }
+        .btn { display: inline-block; padding: 16px 48px; font-size: 1.1rem; font-weight: 600; color: white; background: linear-gradient(135deg, var(--primary), var(--primary-light)); border: none; border-radius: 12px; cursor: pointer; transition: all 0.2s; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .back-link { display: block; text-align: center; margin-top: 24px; color: var(--text-muted); text-decoration: none; font-size: 0.95rem; }
+        .back-link:hover { color: var(--primary); }
+        .footer {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 40px 20px;
+            margin: 40px auto 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            max-width: 1200px;
+            width: 100%;
+            text-align: center;
+        }
+        .footer a { color: var(--primary); text-decoration: none; }
+        .footer-links { display: flex; gap: 20px; }
+    </style>
+</head>
+<body>
+    <main class="main">
+        <div class="container">
+            <div class="logo"><img src="{% static 'dashboard/logo.png' %}" alt="Skylantix" /></div>
+            <div class="header">
+                <h1>Hi <span>{{ first_name }}</span>, choose your plan</h1>
+                <p>Select the plan that works best for you</p>
+            </div>
+            <div class="billing-toggle">
+                <span class="billing-option active" id="monthly-label">Monthly</span>
+                <div class="toggle-switch" id="billing-toggle" onclick="toggleBilling()"></div>
+                <span class="billing-option" id="annual-label">Annual <span class="save-badge">Save 17%</span></span>
+            </div>
+            <div class="plans-grid">
+                {% for product in products %}<div class="plan-card{% if product.is_featured %} featured{% endif %}{% if product.is_coming_soon %} coming-soon{% endif %}" data-slug="{{ product.slug }}" data-coming-soon="{{ product.is_coming_soon|yesno:'true,false' }}" onclick="selectPlan(this)">
+                    <div class="plan-name">{{ product.name }}</div>
+                    <div class="plan-tagline">{{ product.tagline }}</div>
+                    {% if product.is_coming_soon %}<div class="plan-price"><span class="amount" style="font-size:1.5rem;color:var(--text-muted);">Coming Soon</span></div><div class="plan-price-alt">&nbsp;</div>{% else %}<div class="plan-price"><span class="amount product-price" data-monthly="{{ product.monthly_price|default:0 }}" data-annual="{{ product.annual_price|default:0 }}"></span><span class="period product-period">/mo</span></div><div class="plan-price-alt product-alt" data-monthly="{{ product.annual_price|default:0 }}" data-annual="{{ product.monthly_price|default:0 }}"></div>{% endif %}
+                    <div class="plan-features"><ul>{% for feature in product.features_list %}<li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>{{ feature }}</li>{% endfor %}</ul></div>
+                    {% if product.footer_text %}<div class="plan-footer-text">{{ product.footer_text }}</div>{% endif %}
+                    <div class="plan-select-indicator">{% if product.is_coming_soon %}Coming Soon{% else %}Select{% endif %}</div>
+                </div>{% endfor %}
+            </div>
+            {% if general_addons %}<div class="addons-section">
+                <div class="section-header"><h2>More services</h2><p>Add more services to your subscription</p></div>
+                <div class="addons-list">
+                    {% for addon in general_addons %}<div class="addon-card{% if addon.is_coming_soon %} coming-soon{% endif %}" data-slug="{{ addon.slug }}" data-monthly="{{ addon.monthly_price|default:0 }}" data-annual="{{ addon.annual_price|default:0 }}" data-icon="{{ addon.icon }}" data-coming-soon="{{ addon.is_coming_soon|yesno:'true,false' }}" onclick="toggleAddon(this)">
+                        <div class="addon-checkbox"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg></div>
+                        <div class="addon-icon"></div>
+                        <div class="addon-info"><div class="addon-name">{{ addon.name }}</div><div class="addon-description">{{ addon.tagline|default:addon.description }}</div></div>
+                        <div class="addon-price">{% if addon.is_coming_soon %}Coming Soon{% endif %}</div>
+                    </div>{% endfor %}
+                </div>
+            </div>{% endif %}
+            <form method="post" id="plan-form" class="continue-section">{% csrf_token %}<input type="hidden" name="plan_id" id="selected-plan-id" value=""><input type="hidden" name="billing_cycle" id="billing-cycle-input" value="monthly"><div id="general-addons-inputs"></div><button type="submit" class="btn" id="continue-btn" disabled>Select a plan to continue</button></form>
+            <a href="{% url 'onboarding:start' %}" class="back-link">Back</a>
+        </div>
+    </main>
+    {% include "partials/footer.html" %}
+    <script>
+        let isAnnual = false, selectedPlanSlug = '';
+        const selectedAddons = {};
+        const icons = {database:'<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>',lock:'<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>',photo:'<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',cloud:'<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>',default:'<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>'};
+        function initPrices(){document.querySelectorAll('.product-price').forEach(function(e){e.textContent='$'+Math.round(parseFloat(e.dataset.monthly)||0)});document.querySelectorAll('.product-alt').forEach(function(e){e.textContent='or $'+Math.round(parseFloat(e.dataset.monthly)||0)+'/year'});updateAddonPrices()}
+        function initAddonIcons(){document.querySelectorAll('.addon-card').forEach(function(c){c.querySelector('.addon-icon').innerHTML=icons[c.dataset.icon]||icons.default})}
+        function updateAddonPrices(){var p=isAnnual?'/yr':'/mo';document.querySelectorAll('.addon-card:not(.coming-soon)').forEach(function(c){var pr=isAnnual?parseFloat(c.dataset.annual):parseFloat(c.dataset.monthly);c.querySelector('.addon-price').textContent='+$'+Math.round(pr||0)+p})}
+        function toggleBilling(){isAnnual=!isAnnual;document.getElementById('billing-toggle').classList.toggle('annual',isAnnual);document.getElementById('monthly-label').classList.toggle('active',!isAnnual);document.getElementById('annual-label').classList.toggle('active',isAnnual);document.getElementById('billing-cycle-input').value=isAnnual?'annual':'monthly';document.querySelectorAll('.product-price').forEach(function(e){e.textContent='$'+Math.round(isAnnual?parseFloat(e.dataset.annual):parseFloat(e.dataset.monthly)||0)});document.querySelectorAll('.product-period').forEach(function(e){e.textContent=isAnnual?'/yr':'/mo'});document.querySelectorAll('.product-alt').forEach(function(e){e.textContent=isAnnual?'or $'+Math.round(parseFloat(e.dataset.annual)||0)+'/month':'or $'+Math.round(parseFloat(e.dataset.monthly)||0)+'/year'});updateAddonPrices()}
+        function selectPlan(c){if(c.dataset.comingSoon==='true')return;document.querySelectorAll('.plan-card').forEach(function(e){e.classList.remove('selected');if(!e.classList.contains('coming-soon'))e.querySelector('.plan-select-indicator').textContent='Select'});c.classList.add('selected');c.querySelector('.plan-select-indicator').textContent='Selected';selectedPlanSlug=c.dataset.slug;document.getElementById('selected-plan-id').value=selectedPlanSlug;document.getElementById('continue-btn').disabled=false;document.getElementById('continue-btn').textContent='Continue'}
+        function toggleAddon(c){if(c.dataset.comingSoon==='true')return;c.classList.toggle('selected');var s=c.dataset.slug;if(c.classList.contains('selected'))selectedAddons[s]=true;else delete selectedAddons[s];updateAddonInputs()}
+        function updateAddonInputs(){var h='';for(var s in selectedAddons)h+='<input type="hidden" name="general_addons" value="'+s+'">';document.getElementById('general-addons-inputs').innerHTML=h}
+        initPrices();initAddonIcons();
+    </script>
+</body>
+</html>

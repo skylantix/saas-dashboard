@@ -1,0 +1,826 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Checkout - Skylantix</title>
+        <link
+            rel="icon"
+            type="image/png"
+            href="{% static 'dashboard/favicon.png' %}"
+        />
+        <script src="https://js.stripe.com/v3/"></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            :root {
+                --primary: #6366f1;
+                --primary-light: #818cf8;
+                --secondary: #38bdf8;
+                --secondary-light: #7dd3fc;
+                --bg-gradient: linear-gradient(
+                    135deg,
+                    #dbeafe 0%,
+                    #e0e7ff 50%,
+                    #ede9fe 100%
+                );
+                --card-bg: rgba(255, 255, 255, 0.7);
+                --text-dark: #1e293b;
+                --text-muted: #64748b;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                min-height: 100vh;
+                background: var(--bg-gradient);
+                color: var(--text-dark);
+                display: flex;
+                flex-direction: column;
+            }
+            .main {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px 20px;
+            }
+            .container {
+                width: 100%;
+                max-width: 900px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 32px;
+            }
+            .container.payment-mode {
+                grid-template-columns: 1fr;
+                max-width: 900px;
+            }
+            @media (max-width: 768px) {
+                .container {
+                    grid-template-columns: 1fr;
+                    max-width: 500px;
+                }
+            }
+            .logo {
+                text-align: center;
+                margin-bottom: 24px;
+                grid-column: 1 / -1;
+            }
+            .logo img {
+                height: 80px;
+                width: auto;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 24px;
+                grid-column: 1 / -1;
+            }
+            .header h1 {
+                font-size: 1.75rem;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
+            .header h1 span {
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--secondary)
+                );
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            .header p {
+                color: var(--text-muted);
+                font-size: 1.1rem;
+            }
+            .card {
+                background: var(--card-bg);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 32px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.5);
+            }
+            .card-title {
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 20px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            .form-group label {
+                display: block;
+                font-size: 0.9rem;
+                font-weight: 500;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+            }
+            .form-group input {
+                width: 100%;
+                padding: 14px 16px;
+                font-size: 1rem;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                background: white;
+                color: var(--text-dark);
+                transition: all 0.2s;
+            }
+            .form-group input:focus {
+                outline: none;
+                border-color: var(--primary);
+                box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            }
+            .form-group input::placeholder {
+                color: #94a3b8;
+            }
+            .form-group input:read-only {
+                background: #f8fafc;
+                color: var(--text-muted);
+            }
+            .form-group input.error {
+                border-color: #dc2626;
+            }
+            .field-error {
+                color: #dc2626;
+                font-size: 0.85rem;
+                margin-top: 6px;
+            }
+            .field-success {
+                color: #16a34a;
+                font-size: 0.85rem;
+                margin-top: 6px;
+            }
+            .email-input-row,
+            .code-input-row {
+                display: flex;
+                gap: 10px;
+            }
+            .email-input-row input,
+            .code-input-row input {
+                flex: 1;
+            }
+            .btn-secondary {
+                padding: 14px 20px;
+                font-size: 0.9rem;
+                font-weight: 600;
+                color: var(--primary);
+                background: white;
+                border: 2px solid var(--primary);
+                border-radius: 10px;
+                cursor: pointer;
+                transition: all 0.2s;
+                white-space: nowrap;
+            }
+            .btn-secondary:hover {
+                background: var(--primary);
+                color: white;
+            }
+            .btn-secondary:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            .verify-hint {
+                text-align: center;
+                color: var(--text-muted);
+                font-size: 0.85rem;
+                margin-top: 8px;
+            }
+            .form-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+            .summary-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 12px 0;
+                font-size: 0.95rem;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            .summary-row:last-of-type {
+                border-bottom: none;
+            }
+            .summary-row.total {
+                font-weight: 600;
+                font-size: 1.1rem;
+                padding-top: 16px;
+                margin-top: 8px;
+                border-top: 2px solid #e2e8f0;
+                border-bottom: none;
+            }
+            .billing-badge {
+                display: inline-block;
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--primary-light)
+                );
+                color: white;
+                font-size: 0.75rem;
+                font-weight: 600;
+                padding: 4px 10px;
+                border-radius: 10px;
+                margin-bottom: 16px;
+            }
+            .billing-badge.monthly {
+                background: #e2e8f0;
+                color: var(--text-muted);
+            }
+            /* Stripe Embedded Checkout container: don't force extra blank space */
+            #stripe-checkout {
+                margin-top: 16px;
+            }
+            #stripe-checkout-mount {
+                width: 100%;
+            }
+            .btn {
+                width: 100%;
+                padding: 16px 32px;
+                font-size: 1.1rem;
+                font-weight: 600;
+                color: white;
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--primary-light)
+                );
+                border: none;
+                border-radius: 12px;
+                cursor: pointer;
+                transition: all 0.2s;
+                margin-top: 16px;
+            }
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+            .btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none;
+                box-shadow: none;
+            }
+            .error-message {
+                background: #fef2f2;
+                border: 1px solid #fecaca;
+                color: #dc2626;
+                padding: 12px 16px;
+                border-radius: 10px;
+                font-size: 0.9rem;
+                margin-bottom: 16px;
+                display: none;
+            }
+            .back-link {
+                display: block;
+                text-align: center;
+                margin-top: 24px;
+                color: var(--text-muted);
+                text-decoration: none;
+                font-size: 0.95rem;
+                grid-column: 1 / -1;
+            }
+            .back-link:hover {
+                color: var(--primary);
+            }
+            .footer {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                gap: 8px;
+                padding: 40px 20px;
+                margin: 40px auto 0;
+                color: var(--text-muted);
+                font-size: 0.875rem;
+                max-width: 1200px;
+                width: 100%;
+                text-align: center;
+            }
+            .footer a {
+                color: var(--primary);
+                text-decoration: none;
+            }
+            .footer a:hover {
+                text-decoration: underline;
+            }
+            .footer-links {
+                display: flex;
+                gap: 20px;
+            }
+            .loading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px;
+                color: var(--text-muted);
+            }
+            .spinner {
+                width: 24px;
+                height: 24px;
+                border: 3px solid #e2e8f0;
+                border-top-color: var(--primary);
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+                margin-right: 12px;
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="main">
+            <div class="container">
+                <div class="logo">
+                    <img
+                        src="{% static 'dashboard/logo.png' %}"
+                        alt="Skylantix"
+                    />
+                </div>
+                <div class="header">
+                    <h1>Complete your <span>subscription</span></h1>
+                    <p>One last step, {{ first_name }}!</p>
+                </div>
+
+                <!-- Left Column: Account Info -->
+                <div class="card" id="account-card">
+                    <div class="card-title">Account Information</div>
+                    <div class="error-message" id="error-message"></div>
+
+                    <div class="form-group">
+                        <label>First Name</label>
+                        <input
+                            type="text"
+                            id="first_name"
+                            value="{{ first_name }}"
+                            readonly
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Last Name</label>
+                        <input
+                            type="text"
+                            id="last_name"
+                            placeholder="Your last name"
+                            required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input
+                            type="text"
+                            id="username"
+                            placeholder="Choose a username"
+                            required
+                        />
+                        <div class="field-error" id="username-error"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Email</label>
+                        <div class="email-input-row">
+                            <input
+                                type="email"
+                                id="email"
+                                placeholder="your@email.com"
+                                required
+                            />
+                            <button
+                                type="button"
+                                class="btn-secondary"
+                                id="send-code-btn"
+                                onclick="sendVerificationCode()"
+                            >
+                                Send Code
+                            </button>
+                        </div>
+                        <div class="field-error" id="email-error"></div>
+                    </div>
+
+                    <div
+                        class="form-group"
+                        id="verification-group"
+                        style="display: none"
+                    >
+                        <label>Verification Code</label>
+                        <div class="code-input-row">
+                            <input
+                                type="text"
+                                id="verification-code"
+                                placeholder="Enter 6-digit code"
+                                maxlength="6"
+                                pattern="[0-9]{6}"
+                            />
+                            <button
+                                type="button"
+                                class="btn-secondary"
+                                id="verify-btn"
+                                onclick="verifyCode()"
+                            >
+                                Verify
+                            </button>
+                        </div>
+                        <div class="field-error" id="code-error"></div>
+                        <div class="field-success" id="code-success"></div>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="btn"
+                        id="continue-btn"
+                        onclick="initializeCheckout()"
+                        disabled
+                    >
+                        Continue to Payment
+                    </button>
+                    <div class="verify-hint" id="verify-hint">
+                        Please verify your email to continue
+                    </div>
+                </div>
+
+                                <!-- Right Column: Order Summary + Stripe -->
+                <div class="card" id="payment-card">
+                    <div class="card-title">Order Summary</div>
+                    <span class="billing-badge {% if billing_cycle == 'monthly' %}monthly{% endif %}">{% if billing_cycle == 'annual' %}Annual Billing{% else %}Monthly Billing{% endif %}</span>
+
+                    <div class="summary-row">
+                        <span>{{ plan_name }} Plan</span>
+                        <span>${{ plan_price }}{% if billing_cycle == 'annual' %}/yr{% else %}/mo{% endif %}</span>
+                    </div>
+
+                    {% for addon in addon_list %}
+                    <div class="summary-row">
+                        <span>{{ addon.name }}</span>
+                        <span>+${{ addon.price }}{% if billing_cycle == 'annual' %}/yr{% else %}/mo{% endif %}</span>
+                    </div>
+                    {% endfor %}
+
+                    <div class="summary-row total">
+                        <span>Total</span>
+                        <span>${{ total }}{% if billing_cycle == 'annual' %}/yr{% else %}/mo{% endif %}</span>
+                    </div>
+
+                    <!-- Stripe Embedded Checkout will appear here -->
+                    <div id="stripe-checkout" style="display: none">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <span>Loading payment form...</span>
+                        </div>
+                        <div id="stripe-checkout-mount"></div>
+                    </div>
+                </div>
+
+                <a href="{% url 'onboarding:addons' %}" class="back-link">Back to add-ons</a>
+            </div>
+        </main>
+
+        {% include "partials/footer.html" %}
+
+        <script>
+            const stripePublishableKey = "{{ stripe_publishable_key }}";
+            let stripe = null;
+            let checkout = null;
+
+            function getCookie(name) {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(";").shift();
+            }
+
+            function setPaymentMode(enabled) {
+                const container = document.querySelector(".container");
+                if (enabled) {
+                    container.classList.add("payment-mode");
+                    document.getElementById("account-card").style.display =
+                        "none";
+                    document.getElementById("stripe-checkout").style.display =
+                        "block";
+                } else {
+                    container.classList.remove("payment-mode");
+                    document.getElementById("account-card").style.display =
+                        "block";
+                    document.getElementById("stripe-checkout").style.display =
+                        "none";
+                }
+            }
+
+            function showError(message) {
+                const errorEl = document.getElementById("error-message");
+                errorEl.textContent = message;
+                errorEl.style.display = "block";
+            }
+
+            function hideError() {
+                document.getElementById("error-message").style.display = "none";
+            }
+
+            function clearFieldErrors() {
+                document.getElementById("username").classList.remove("error");
+                document.getElementById("email").classList.remove("error");
+                document.getElementById("username-error").textContent = "";
+                document.getElementById("email-error").textContent = "";
+            }
+
+            function showFieldError(field, message) {
+                document.getElementById(field).classList.add("error");
+                document.getElementById(field + "-error").textContent = message;
+            }
+
+            let emailVerified = false;
+
+            async function sendVerificationCode() {
+                hideError();
+                document.getElementById("email-error").textContent = "";
+
+                const email = document.getElementById("email").value.trim();
+                if (!email || !email.includes("@")) {
+                    showFieldError(
+                        "email",
+                        "Please enter a valid email address",
+                    );
+                    return;
+                }
+
+                const btn = document.getElementById("send-code-btn");
+                btn.disabled = true;
+                btn.textContent = "Sending...";
+
+                try {
+                    const csrfToken = getCookie("csrftoken");
+                    const response = await fetch(
+                        "{% url 'onboarding:send_verification_code' %}",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-CSRFToken": csrfToken,
+                            },
+                            body: JSON.stringify({ email: email }),
+                        },
+                    );
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        showFieldError("email", data.error);
+                        btn.disabled = false;
+                        btn.textContent = "Send Code";
+                        return;
+                    }
+
+                    if (data.sent) {
+                        document.getElementById(
+                            "verification-group",
+                        ).style.display = "block";
+                        document.getElementById("verification-code").focus();
+                        btn.textContent = "Resend";
+                        btn.disabled = false;
+                    }
+                } catch (error) {
+                    showError(
+                        "Failed to send verification code. Please try again.",
+                    );
+                    btn.disabled = false;
+                    btn.textContent = "Send Code";
+                }
+            }
+
+            async function verifyCode() {
+                const code = document
+                    .getElementById("verification-code")
+                    .value.trim();
+                const email = document.getElementById("email").value.trim();
+
+                document.getElementById("code-error").textContent = "";
+                document.getElementById("code-success").textContent = "";
+
+                if (!code || code.length !== 6) {
+                    document.getElementById("code-error").textContent =
+                        "Please enter the 6-digit code";
+                    return;
+                }
+
+                const btn = document.getElementById("verify-btn");
+                btn.disabled = true;
+                btn.textContent = "Verifying...";
+
+                try {
+                    const csrfToken = getCookie("csrftoken");
+                    const response = await fetch(
+                        "{% url 'onboarding:verify_email_code' %}",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-CSRFToken": csrfToken,
+                            },
+                            body: JSON.stringify({ email: email, code: code }),
+                        },
+                    );
+
+                    const data = await response.json();
+
+                    if (data.error && !data.verified) {
+                        document.getElementById("code-error").textContent =
+                            data.error;
+                        btn.disabled = false;
+                        btn.textContent = "Verify";
+                        return;
+                    }
+
+                    if (data.verified) {
+                        emailVerified = true;
+                        document.getElementById("code-success").textContent =
+                            "Email verified!";
+                        document.getElementById("verification-code").readOnly =
+                            true;
+                        document.getElementById("email").readOnly = true;
+                        document.getElementById("send-code-btn").style.display =
+                            "none";
+                        btn.style.display = "none";
+                        document.getElementById("continue-btn").disabled =
+                            false;
+                        document.getElementById("verify-hint").style.display =
+                            "none";
+                    } else {
+                        document.getElementById("code-error").textContent =
+                            data.error || "Invalid code";
+                        btn.disabled = false;
+                        btn.textContent = "Verify";
+                    }
+                } catch (error) {
+                    document.getElementById("code-error").textContent =
+                        "Verification failed. Please try again.";
+                    btn.disabled = false;
+                    btn.textContent = "Verify";
+                }
+            }
+
+            async function initializeCheckout() {
+                hideError();
+                clearFieldErrors();
+
+                const email = document.getElementById("email").value.trim();
+                const lastName = document
+                    .getElementById("last_name")
+                    .value.trim();
+                const username = document
+                    .getElementById("username")
+                    .value.trim();
+
+                // Validate fields
+                if (!email || !lastName || !username) {
+                    showError("Please fill in all fields");
+                    return;
+                }
+
+                if (!email.includes("@")) {
+                    showError("Please enter a valid email address");
+                    return;
+                }
+
+                // Disable button
+                const btn = document.getElementById("continue-btn");
+                btn.disabled = true;
+                btn.textContent = "Checking availability...";
+
+                try {
+                    if (!stripePublishableKey) {
+                        throw new Error(
+                            "Stripe publishable key is not configured (STRIPE_PUBLISHABLE_KEY).",
+                        );
+                    }
+                    if (!stripe) {
+                        stripe = Stripe(stripePublishableKey);
+                    }
+
+                    const csrfToken = getCookie("csrftoken");
+
+                    // First validate username and email with Keycloak
+                    const validateResponse = await fetch(
+                        '{% url "onboarding:validate_account" %}',
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-CSRFToken": csrfToken,
+                            },
+                            body: JSON.stringify({
+                                email: email,
+                                username: username,
+                            }),
+                        },
+                    );
+
+                    const validateData = await validateResponse.json();
+
+                    if (validateData.error) {
+                        showError(validateData.error);
+                        btn.disabled = false;
+                        btn.textContent = "Continue to Payment";
+                        return;
+                    }
+
+                    if (!validateData.valid) {
+                        if (validateData.errors) {
+                            if (validateData.errors.email) {
+                                showFieldError(
+                                    "email",
+                                    validateData.errors.email,
+                                );
+                            }
+                            if (validateData.errors.username) {
+                                showFieldError(
+                                    "username",
+                                    validateData.errors.username,
+                                );
+                            }
+                        }
+                        btn.disabled = false;
+                        btn.textContent = "Continue to Payment";
+                        return;
+                    }
+
+                    btn.textContent = "Loading...";
+
+                    // Create checkout session
+                    const response = await fetch(
+                        '{% url "onboarding:create_checkout_session" %}',
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-CSRFToken": csrfToken,
+                            },
+                            body: JSON.stringify({
+                                email: email,
+                                last_name: lastName,
+                                username: username,
+                            }),
+                        },
+                    );
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        showError(data.error);
+                        btn.disabled = false;
+                        btn.textContent = "Continue to Payment";
+                        return;
+                    }
+
+                    // Initialize Stripe Embedded Checkout (only switch UI after this succeeds)
+                    if (
+                        !stripe ||
+                        typeof stripe.initEmbeddedCheckout !== "function"
+                    ) {
+                        throw new Error(
+                            "Stripe Embedded Checkout is not available. Verify your Stripe keys and that Embedded Checkout is enabled for your account.",
+                        );
+                    }
+
+                    checkout = await stripe.initEmbeddedCheckout({
+                        clientSecret: data.clientSecret,
+                    });
+
+                    setPaymentMode(true);
+
+                    // Mount into a dedicated empty div (avoids spinner blocking)
+                    checkout.mount("#stripe-checkout-mount");
+
+                    // Hide the loading indicator once mounted
+                    const loadingEl = document.querySelector(
+                        "#stripe-checkout .loading",
+                    );
+                    if (loadingEl) loadingEl.style.display = "none";
+                } catch (error) {
+                    console.error(error);
+                    setPaymentMode(false);
+                    showError(
+                        error?.message ||
+                            "Something went wrong. Please try again.",
+                    );
+                    btn.disabled = false;
+                    btn.textContent = "Continue to Payment";
+                }
+            }
+        </script>
+    </body>
+</html>

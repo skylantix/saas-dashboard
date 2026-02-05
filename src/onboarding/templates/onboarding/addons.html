@@ -1,0 +1,471 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Add Extra Storage - Skylantix</title>
+        <link
+            rel="icon"
+            type="image/png"
+            href="{% static 'dashboard/favicon.png' %}"
+        />
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            :root {
+                --primary: #6366f1;
+                --primary-light: #818cf8;
+                --secondary: #38bdf8;
+                --secondary-light: #7dd3fc;
+                --bg-gradient: linear-gradient(
+                    135deg,
+                    #dbeafe 0%,
+                    #e0e7ff 50%,
+                    #ede9fe 100%
+                );
+                --card-bg: rgba(255, 255, 255, 0.7);
+                --text-dark: #1e293b;
+                --text-muted: #64748b;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                min-height: 100vh;
+                background: var(--bg-gradient);
+                color: var(--text-dark);
+                display: flex;
+                flex-direction: column;
+            }
+            .main {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px 20px;
+            }
+            .container {
+                width: 100%;
+                max-width: 700px;
+            }
+            .logo {
+                text-align: center;
+                margin-bottom: 40px;
+            }
+            .logo img {
+                height: 80px;
+                width: auto;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 32px;
+            }
+            .header h1 {
+                font-size: 1.75rem;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
+            .header h1 span {
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--secondary)
+                );
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            .header p {
+                color: var(--text-muted);
+                font-size: 1.1rem;
+            }
+            .billing-badge {
+                display: inline-block;
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--primary-light)
+                );
+                color: white;
+                font-size: 0.8rem;
+                font-weight: 600;
+                padding: 4px 12px;
+                border-radius: 12px;
+                margin-bottom: 32px;
+            }
+            .billing-badge.monthly {
+                background: #e2e8f0;
+                color: var(--text-muted);
+            }
+            .storage-list {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+                margin-bottom: 32px;
+            }
+            .storage-card {
+                background: var(--card-bg);
+                backdrop-filter: blur(10px);
+                border-radius: 16px;
+                padding: 24px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+                border: 2px solid transparent;
+                transition: all 0.2s;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+            }
+            .storage-card:hover {
+                border-color: var(--primary-light);
+            }
+            .storage-card.selected {
+                border-color: var(--primary);
+                background: rgba(99, 102, 241, 0.05);
+            }
+            .storage-checkbox {
+                width: 24px;
+                height: 24px;
+                border: 2px solid #cbd5e1;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                transition: all 0.2s;
+            }
+            .storage-card.selected .storage-checkbox {
+                background: var(--primary);
+                border-color: var(--primary);
+            }
+            .storage-checkbox svg {
+                width: 14px;
+                height: 14px;
+                color: white;
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .storage-card.selected .storage-checkbox svg {
+                opacity: 1;
+            }
+            .storage-icon {
+                width: 48px;
+                height: 48px;
+                background: linear-gradient(
+                    135deg,
+                    var(--primary-light),
+                    var(--secondary-light)
+                );
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }
+            .storage-icon svg {
+                width: 24px;
+                height: 24px;
+                color: white;
+            }
+            .storage-info {
+                flex: 1;
+            }
+            .storage-name {
+                font-size: 1.1rem;
+                font-weight: 600;
+                margin-bottom: 4px;
+            }
+            .storage-description {
+                color: var(--text-muted);
+                font-size: 0.9rem;
+                line-height: 1.4;
+            }
+            .storage-price {
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--primary);
+                white-space: nowrap;
+            }
+            .summary-card {
+                background: var(--card-bg);
+                backdrop-filter: blur(10px);
+                border-radius: 16px;
+                padding: 24px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.5);
+                margin-bottom: 24px;
+            }
+            .summary-title {
+                font-size: 0.9rem;
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 16px;
+            }
+            .summary-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                font-size: 0.95rem;
+            }
+            .summary-row.total {
+                border-top: 1px solid #e2e8f0;
+                margin-top: 8px;
+                padding-top: 16px;
+                font-weight: 600;
+                font-size: 1.1rem;
+            }
+            .btn {
+                width: 100%;
+                padding: 16px 32px;
+                font-size: 1.1rem;
+                font-weight: 600;
+                color: white;
+                background: linear-gradient(
+                    135deg,
+                    var(--primary),
+                    var(--primary-light)
+                );
+                border: none;
+                border-radius: 12px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+            .back-link {
+                display: block;
+                text-align: center;
+                margin-top: 24px;
+                color: var(--text-muted);
+                text-decoration: none;
+                font-size: 0.95rem;
+            }
+            .back-link:hover {
+                color: var(--primary);
+            }
+            .footer {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                gap: 8px;
+                padding: 40px 20px;
+                margin: 40px auto 0;
+                color: var(--text-muted);
+                font-size: 0.875rem;
+                max-width: 1200px;
+                width: 100%;
+                text-align: center;
+            }
+            .footer a {
+                color: var(--primary);
+                text-decoration: none;
+            }
+            .footer a:hover {
+                text-decoration: underline;
+            }
+            .footer-links {
+                display: flex;
+                gap: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <main class="main">
+            <div class="container">
+                <div class="logo">
+                    <img
+                        src="{% static 'dashboard/logo.png' %}"
+                        alt="Skylantix"
+                    />
+                </div>
+                <div class="header">
+                    <h1>Need more <span>storage</span>?</h1>
+                    <p>
+                        Expand your {{ selected_plan.name }} storage capacity
+                        (optional)
+                    </p>
+                    <br />
+                    <span
+                        class="billing-badge {% if billing_cycle == 'monthly' %}monthly{% endif %}"
+                        >{% if billing_cycle == 'annual' %}Annual billing - Save
+                        17%{% else %}Monthly billing{% endif %}</span
+                    >
+                </div>
+
+                <div class="storage-list">
+                    {% for addon in storage_addons %}
+                    <div
+                        class="storage-card"
+                        data-slug="{{ addon.slug }}"
+                        data-monthly="{{ addon.monthly_price|default:0 }}"
+                        data-annual="{{ addon.annual_price|default:0 }}"
+                        data-name="{{ addon.name }}"
+                        onclick="toggleStorage(this)"
+                    >
+                        <div class="storage-checkbox">
+                            <svg
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="3"
+                                    d="M5 13l4 4L19 7"
+                                />
+                            </svg>
+                        </div>
+                        <div class="storage-icon">
+                            <svg
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                                />
+                            </svg>
+                        </div>
+                        <div class="storage-info">
+                            <div class="storage-name">{{ addon.name }}</div>
+                            <div class="storage-description">
+                                {{ addon.tagline|default:addon.description }}
+                            </div>
+                        </div>
+                        <div class="storage-price"></div>
+                    </div>
+                    {% empty %}
+                    <p style="text-align: center; color: var(--text-muted)">
+                        No storage upgrades available for this plan.
+                    </p>
+                    {% endfor %}
+                </div>
+
+                <div class="summary-card">
+                    <div class="summary-title">Order Summary</div>
+                    <div class="summary-row">
+                        <span>{{ selected_plan.name }}</span>
+                        <span id="plan-price"></span>
+                    </div>
+                    {% for addon in selected_general_addons %}
+                    <div class="summary-row">
+                        <span>{{ addon.name }}</span>
+                        <span
+                            class="general-addon-price"
+                            data-monthly="{{ addon.monthly_price|default:0 }}"
+                            data-annual="{{ addon.annual_price|default:0 }}"
+                        ></span>
+                    </div>
+                    {% endfor %}
+                    <div id="storage-summary"></div>
+                    <div class="summary-row total">
+                        <span>Total</span>
+                        <span id="total-price"></span>
+                    </div>
+                </div>
+
+                <form method="post" id="storage-form">
+                    {% csrf_token %}
+                    <div id="storage-inputs"></div>
+                    <button type="submit" class="btn">
+                        Continue to Checkout
+                    </button>
+                </form>
+
+                <a href="{% url 'onboarding:plan' %}" class="back-link"
+                    >Back to plan selection</a
+                >
+            </div>
+        </main>
+
+        {% include "partials/footer.html" %}
+
+        <script>
+            const selectedStorage = {};
+            const isAnnual = '{{ billing_cycle }}' === 'annual';
+            const basePriceMonthly = {{ selected_plan.monthly_price|default:0 }};
+            const basePriceAnnual = {{ selected_plan.annual_price|default:0 }};
+            const basePrice = isAnnual ? basePriceAnnual : basePriceMonthly;
+            const period = isAnnual ? '/yr' : '/mo';
+
+            // Calculate general addons total
+            let generalAddonsTotal = 0;
+            document.querySelectorAll('.general-addon-price').forEach(function(el) {
+                var monthly = parseFloat(el.dataset.monthly) || 0;
+                var annual = parseFloat(el.dataset.annual) || 0;
+                var price = isAnnual ? annual : monthly;
+                generalAddonsTotal += price;
+                el.textContent = '+$' + Math.round(price) + period;
+            });
+
+            function initPrices() {
+                document.getElementById('plan-price').textContent = '$' + Math.round(basePrice) + period;
+                updateTotal();
+
+                document.querySelectorAll('.storage-card').forEach(function(card) {
+                    var monthly = parseFloat(card.dataset.monthly) || 0;
+                    var annual = parseFloat(card.dataset.annual) || 0;
+                    var price = isAnnual ? annual : monthly;
+                    card.querySelector('.storage-price').textContent = '+$' + Math.round(price) + period;
+                });
+            }
+
+            function toggleStorage(card) {
+                card.classList.toggle('selected');
+                var slug = card.dataset.slug;
+                var price = isAnnual ? parseFloat(card.dataset.annual) : parseFloat(card.dataset.monthly);
+
+                if (card.classList.contains('selected')) {
+                    selectedStorage[slug] = { name: card.dataset.name, price: price || 0 };
+                } else {
+                    delete selectedStorage[slug];
+                }
+                updateSummary();
+            }
+
+            function updateSummary() {
+                var summaryContainer = document.getElementById('storage-summary');
+                var inputsContainer = document.getElementById('storage-inputs');
+                var html = '';
+                var inputsHtml = '';
+
+                for (var slug in selectedStorage) {
+                    var addon = selectedStorage[slug];
+                    html += '<div class="summary-row"><span>' + addon.name + '</span><span>+$' + Math.round(addon.price) + period + '</span></div>';
+                    inputsHtml += '<input type="hidden" name="storage_addons" value="' + slug + '">';
+                }
+
+                summaryContainer.innerHTML = html;
+                inputsContainer.innerHTML = inputsHtml;
+                updateTotal();
+            }
+
+            function updateTotal() {
+                var storageTotal = 0;
+                for (var slug in selectedStorage) {
+                    storageTotal += selectedStorage[slug].price;
+                }
+                var total = basePrice + generalAddonsTotal + storageTotal;
+                document.getElementById('total-price').textContent = '$' + Math.round(total) + period;
+            }
+
+            initPrices();
+        </script>
+    </body>
+</html>
