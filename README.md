@@ -1,4 +1,4 @@
-# Skylantix Dashboard
+# Skylantix User Platform
 
 A Django backend service for **user onboarding, subscription management, and access control**. It acts as the central orchestrator between external systems — delegating identity to **Keycloak**, billing to **Stripe**, email to **Mailgun**, and provisioning product instances while keeping its own database for subscription state and instance assignments.
 
