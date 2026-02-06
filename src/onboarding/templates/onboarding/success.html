@@ -138,6 +138,39 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
         }
+        .resend-section {
+            margin-top: 16px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .resend-link {
+            color: var(--primary);
+            cursor: pointer;
+            text-decoration: underline;
+            background: none;
+            border: none;
+            font-size: 0.9rem;
+            font-family: inherit;
+            padding: 0;
+        }
+        .resend-link:hover {
+            color: var(--primary-light);
+        }
+        .resend-link:disabled {
+            color: var(--text-muted);
+            cursor: default;
+            text-decoration: none;
+        }
+        .resend-msg {
+            margin-top: 6px;
+            font-size: 0.85rem;
+        }
+        .resend-msg.success {
+            color: var(--success);
+        }
+        .resend-msg.error {
+            color: #ef4444;
+        }
         .footer {
             display: flex;
             flex-direction: column;
@@ -192,10 +225,59 @@
                 </div>
                 
                 <a href="/" class="btn">Go to Login</a>
+
+                <div class="resend-section">
+                    Didn't get the password email?
+                    <button class="resend-link" id="resend-btn" onclick="resendPasswordEmail()">Click here to resend</button>
+                    <div id="resend-msg"></div>
+                </div>
             </div>
         </div>
     </main>
     
     {% include "partials/footer.html" %}
+
+    <script>
+    function resendPasswordEmail() {
+        var btn = document.getElementById('resend-btn');
+        var msg = document.getElementById('resend-msg');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        msg.textContent = '';
+        msg.className = 'resend-msg';
+
+        fetch('{% url "onboarding:resend_password_email" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ email: '{{ email|escapejs }}' })
+        })
+        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+            if (res.ok && res.data.sent) {
+                msg.textContent = 'Email sent! Please check your inbox (and spam folder).';
+                msg.className = 'resend-msg success';
+                btn.textContent = 'Resent';
+                setTimeout(function() {
+                    btn.disabled = false;
+                    btn.textContent = 'Click here to resend';
+                }, 60000);
+            } else {
+                msg.textContent = res.data.error || 'Something went wrong.';
+                msg.className = 'resend-msg error';
+                btn.disabled = false;
+                btn.textContent = 'Click here to resend';
+            }
+        })
+        .catch(function() {
+            msg.textContent = 'Network error. Please try again.';
+            msg.className = 'resend-msg error';
+            btn.disabled = false;
+            btn.textContent = 'Click here to resend';
+        });
+    }
+    </script>
 </body>
 </html>

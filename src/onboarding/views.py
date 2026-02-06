@@ -509,6 +509,59 @@ def success(request):
         )
 
 
+@require_POST
+def resend_password_email(request):
+    """Resend the Keycloak password-setup email for a newly created account.
+
+    Called from the success page when the user didn't receive their
+    password-setup email.  Rate-limited to one resend per 60 seconds per
+    session to prevent abuse.
+    """
+    import time
+
+    try:
+        data = json.loads(request.body)
+        email = data.get("email", "").strip().lower()
+
+        if not email:
+            return JsonResponse({"error": "Email is required"}, status=400)
+
+        # Simple session-based rate limit: one resend per 60 seconds.
+        last_resend = request.session.get("last_password_resend", 0)
+        if time.time() - last_resend < 60:
+            return JsonResponse(
+                {"error": "Please wait a minute before requesting another email."},
+                status=429,
+            )
+
+        from dashboard.models import UserProfile
+
+        try:
+            profile = UserProfile.objects.select_related("user").get(
+                user__email__iexact=email
+            )
+        except UserProfile.DoesNotExist:
+            # Don't reveal whether the account exists.
+            return JsonResponse({"sent": True})
+
+        if not profile.keycloak_id:
+            return JsonResponse({"sent": True})
+
+        from onboarding.tasks import send_keycloak_password_reset_email
+
+        send_keycloak_password_reset_email.delay(profile.keycloak_id)
+
+        request.session["last_password_resend"] = time.time()
+
+        return JsonResponse({"sent": True})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    except Exception as e:
+        logger.error("Resend password email error: %s", e)
+        return JsonResponse({"error": "Something went wrong"}, status=500)
+
+
 def cancel(request):
     """Handle cancelled checkout."""
     return render(request, "onboarding/cancel.html")

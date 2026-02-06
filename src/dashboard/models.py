@@ -406,6 +406,11 @@ class UserProfile(models.Model):
         Ensure user has an instance assigned for a product that requires one.
         Adds user to instance group and syncs to Keycloak.
 
+        The entire check-then-allocate sequence runs inside a single atomic
+        block with a ``SELECT FOR UPDATE`` on the profile row.  This
+        serializes concurrent webhook calls for the same user and prevents
+        double-allocation.
+
         Args:
             product: The product to assign an instance for
 
@@ -415,17 +420,21 @@ class UserProfile(models.Model):
         if not product.requires_instance:
             return False
 
-        # Check if user is already in an instance group for this product
-        user_group_ids = set(self.user.groups.values_list("id", flat=True))
-        existing_instance = Instance.objects.filter(
-            product=product, groups__id__in=user_group_ids, is_active=True
-        ).first()
-
-        if existing_instance:
-            return False  # Already assigned
-
-        # Allocate a new seat atomically
         with transaction.atomic():
+            # Lock the profile row to serialize per-user assignments.
+            # This prevents two concurrent webhooks from both passing the
+            # "already assigned" check and double-allocating.
+            UserProfile.objects.select_for_update().get(pk=self.pk)
+
+            # Check if user is already in an instance group for this product
+            user_group_ids = set(self.user.groups.values_list("id", flat=True))
+            existing_instance = Instance.objects.filter(
+                product=product, groups__id__in=user_group_ids, is_active=True
+            ).first()
+
+            if existing_instance:
+                return False  # Already assigned
+
             instance = (
                 Instance.objects.select_for_update(skip_locked=True)
                 .filter(

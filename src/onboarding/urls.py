@@ -22,6 +22,11 @@ urlpatterns = [
     ),
     path("checkout/verify-code/", views.verify_email_code, name="verify_email_code"),
     path("success/", views.success, name="success"),
+    path(
+        "success/resend-password/",
+        views.resend_password_email,
+        name="resend_password_email",
+    ),
     path("cancel/", views.cancel, name="cancel"),
     path("waitlist/", views.waitlist, name="waitlist"),
     path("waitlist/submit/", views.waitlist_submit, name="waitlist_submit"),
