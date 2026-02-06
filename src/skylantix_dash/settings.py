@@ -28,7 +28,7 @@ environ.Env.read_env(BASE_DIR.parent / ".env")
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool("DEBUG", default=False)
 
 ALLOWED_HOSTS = ["127.0.0.1", "100.110.200.102", "100.100.200.1", "dash.skylantix.com"]
 

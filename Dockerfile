@@ -16,5 +16,4 @@ COPY src/ ./src/
 
 EXPOSE 8000
 
-# Not for production
-CMD ["sh", "-c", "python src/manage.py migrate && python src/manage.py runserver 0.0.0.0:8000"]
+CMD ["sh", "-c", "python src/manage.py migrate && gunicorn skylantix_dash.wsgi:application --bind 0.0.0.0:8000 --workers 3 --chdir src"]

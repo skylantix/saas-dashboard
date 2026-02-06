@@ -20,6 +20,7 @@ django-extensions==4.1
 django-filter==25.2
 django-timezone-field==7.2.1
 environ==1.0
+gunicorn==25.0.1
 idna==3.11
 kombu==5.6.2
 mozilla-django-oidc==5.0.2
