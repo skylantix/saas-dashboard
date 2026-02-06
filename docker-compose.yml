@@ -13,12 +13,14 @@ services:
       - postgres
     ports:
       - ${TAILSCALE_IP}:8000:8000
+    restart: unless-stopped
 
   celery_worker:
     container_name: skylantix_celery
     image: skylantix_dash:local
     command: celery -A skylantix_dash worker --loglevel=info
     working_dir: /app/src
+    restart: unless-stopped
     env_file:
       - .env
     networks:
@@ -31,6 +33,7 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: skylantix_dash_db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -43,6 +46,7 @@ services:
   redis:
     image: redis:8-alpine
     container_name: skylantix_redis
+    restart: unless-stopped
     networks:
       - db-net
 

@@ -1,0 +1,565 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recover Account - Skylantix</title>
+    <link rel="icon" type="image/png" href="{% static 'dashboard/favicon.png' %}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --secondary: #38bdf8;
+            --bg-gradient: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 50%, #ede9fe 100%);
+            --card-bg: rgba(255, 255, 255, 0.7);
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --error: #ef4444;
+            --success: #22c55e;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            background: var(--bg-gradient);
+            color: var(--text-dark);
+            display: flex;
+            flex-direction: column;
+        }
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .logo img {
+            height: 80px;
+            width: auto;
+        }
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 48px 40px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .recover-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+        .recover-icon svg {
+            width: 40px;
+            height: 40px;
+            color: white;
+        }
+        .card h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text-dark);
+            text-align: center;
+        }
+        .card .subtitle {
+            color: var(--text-muted);
+            font-size: 1rem;
+            margin-bottom: 28px;
+            line-height: 1.6;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            color: var(--text-dark);
+        }
+        .form-group input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+            background: white;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .form-group input:read-only {
+            background: #f1f5f9;
+            color: var(--text-muted);
+        }
+        .code-input-row {
+            display: flex;
+            gap: 10px;
+        }
+        .code-input-row input {
+            flex: 1;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px 32px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .btn-secondary {
+            padding: 14px 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--primary);
+            background: #eef2ff;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-secondary:hover {
+            background: #e0e7ff;
+        }
+        .btn-secondary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .field-error {
+            color: var(--error);
+            font-size: 0.85rem;
+            margin-top: 6px;
+        }
+        .field-success {
+            color: var(--success);
+            font-size: 0.85rem;
+            margin-top: 6px;
+        }
+        .global-error {
+            background: #fef2f2;
+            color: var(--error);
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .secondary-link {
+            display: block;
+            margin-top: 16px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            text-align: center;
+        }
+        .secondary-link:hover {
+            color: var(--primary);
+        }
+        .success-state, .checkout-state, .active-state {
+            text-align: center;
+            display: none;
+        }
+        .success-icon, .active-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #22c55e, #4ade80);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+        .success-icon svg, .active-icon svg {
+            width: 40px;
+            height: 40px;
+            color: white;
+        }
+        .checkout-state .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 24px;
+            color: var(--text-muted);
+        }
+        .checkout-state .loading .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e2e8f0;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        #stripe-checkout-mount {
+            width: 100%;
+        }
+        .footer {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 40px 20px;
+            margin: 40px auto 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            max-width: 1200px;
+            width: 100%;
+            text-align: center;
+        }
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <main class="main">
+        <div class="container">
+            <div class="logo">
+                <img src="{% static 'dashboard/logo.png' %}" alt="Skylantix">
+            </div>
+            <div class="card">
+                <!-- Recovery form -->
+                <div id="recover-form">
+                    <div class="recover-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                        </svg>
+                    </div>
+                    <h1>Recover your account</h1>
+                    <p class="subtitle">Enter the username or email address associated with your account and we'll send a verification code to your email.</p>
+
+                    <div class="global-error" id="global-error"></div>
+
+                    <!-- Step 1: Username or Email -->
+                    <div class="form-group">
+                        <label for="identifier">Username or Email</label>
+                        <div class="code-input-row">
+                            <input
+                                type="text"
+                                id="identifier"
+                                placeholder="username or you@example.com"
+                                autocomplete="username"
+                            />
+                            <button
+                                type="button"
+                                class="btn-secondary"
+                                id="send-code-btn"
+                                onclick="sendRecoveryCode()"
+                            >
+                                Send Code
+                            </button>
+                        </div>
+                        <div class="field-error" id="identifier-error"></div>
+                    </div>
+
+                    <!-- Step 2: Verification code (hidden until code is sent) -->
+                    <div class="form-group" id="verification-group" style="display: none">
+                        <label for="verification-code">Verification Code</label>
+                        <div class="code-input-row">
+                            <input
+                                type="text"
+                                id="verification-code"
+                                placeholder="Enter 6-digit code"
+                                maxlength="6"
+                                pattern="[0-9]{6}"
+                                inputmode="numeric"
+                            />
+                            <button
+                                type="button"
+                                class="btn-secondary"
+                                id="verify-btn"
+                                onclick="verifyRecoveryCode()"
+                            >
+                                Verify
+                            </button>
+                        </div>
+                        <div class="field-error" id="code-error"></div>
+                        <div class="field-success" id="code-success"></div>
+                    </div>
+                </div>
+
+                <!-- Checkout state (shown after successful verification for delinquent accounts) -->
+                <div class="checkout-state" id="checkout-state">
+                    <h1>Resubscribe</h1>
+                    <p class="subtitle">Your account has been re-enabled. Complete payment below to restore your subscription.</p>
+                    <div class="loading" id="checkout-loading">
+                        <div class="spinner"></div>
+                        <span>Loading payment form...</span>
+                    </div>
+                    <div id="stripe-checkout-mount"></div>
+                </div>
+
+                <!-- Active account state (shown when account doesn't need recovery) -->
+                <div class="active-state" id="active-state">
+                    <div class="active-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <h1>Your account is active</h1>
+                    <p class="subtitle">Your account is already in good standing. You can log in normally.</p>
+                    <a href="/" class="btn">Log In</a>
+                </div>
+
+                <a href="{% url 'onboarding:start' %}" class="secondary-link" id="onboarding-link">Back to sign up</a>
+            </div>
+        </div>
+    </main>
+
+    {% include "partials/footer.html" %}
+
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        const stripePublishableKey = "{{ stripe_publishable_key }}";
+        let stripeInstance = null;
+        let checkout = null;
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== "") {
+                const cookies = document.cookie.split(";");
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === name + "=") {
+                        cookieValue = decodeURIComponent(
+                            cookie.substring(name.length + 1),
+                        );
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function showError(message) {
+            const el = document.getElementById("global-error");
+            el.textContent = message;
+            el.style.display = "block";
+        }
+
+        function clearErrors() {
+            document.getElementById("global-error").style.display = "none";
+            document.getElementById("identifier-error").textContent = "";
+            document.getElementById("code-error").textContent = "";
+        }
+
+        async function sendRecoveryCode() {
+            clearErrors();
+
+            const identifier = document.getElementById("identifier").value.trim();
+            if (!identifier) {
+                document.getElementById("identifier-error").textContent =
+                    "Please enter your username or email address.";
+                return;
+            }
+
+            const btn = document.getElementById("send-code-btn");
+            btn.disabled = true;
+            btn.textContent = "Sending...";
+
+            try {
+                const csrfToken = getCookie("csrftoken");
+                const response = await fetch(
+                    "{% url 'recovery:recover_send_code' %}",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrfToken,
+                        },
+                        body: JSON.stringify({ identifier: identifier }),
+                    },
+                );
+
+                const data = await response.json();
+
+                if (data.sent) {
+                    document.getElementById("verification-group").style.display = "block";
+                    document.getElementById("verification-code").focus();
+                    btn.textContent = "Resend";
+                    btn.disabled = false;
+                } else if (data.error) {
+                    showError(data.error);
+                    btn.disabled = false;
+                    btn.textContent = "Send Code";
+                }
+            } catch (error) {
+                showError("Failed to send recovery code. Please try again.");
+                btn.disabled = false;
+                btn.textContent = "Send Code";
+            }
+        }
+
+        async function verifyRecoveryCode() {
+            const code = document.getElementById("verification-code").value.trim();
+            const identifier = document.getElementById("identifier").value.trim();
+
+            document.getElementById("code-error").textContent = "";
+            document.getElementById("code-success").textContent = "";
+
+            if (!code || code.length !== 6) {
+                document.getElementById("code-error").textContent =
+                    "Please enter the 6-digit code.";
+                return;
+            }
+
+            const btn = document.getElementById("verify-btn");
+            btn.disabled = true;
+            btn.textContent = "Verifying...";
+
+            try {
+                const csrfToken = getCookie("csrftoken");
+                const response = await fetch(
+                    "{% url 'recovery:recover_verify_code' %}",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrfToken,
+                        },
+                        body: JSON.stringify({ identifier: identifier, code: code }),
+                    },
+                );
+
+                const data = await response.json();
+
+                if (data.error && !data.recovered) {
+                    // Check if the error is about account already being active
+                    if (response.status === 400 && data.error.includes("already active")) {
+                        document.getElementById("recover-form").style.display = "none";
+                        document.getElementById("onboarding-link").style.display = "none";
+                        document.getElementById("active-state").style.display = "block";
+                    } else {
+                        document.getElementById("code-error").textContent = data.error;
+                        btn.disabled = false;
+                        btn.textContent = "Verify";
+                    }
+                    return;
+                }
+
+                if (data.recovered) {
+                    // Account re-enabled -- show Stripe checkout to resubscribe
+                    document.getElementById("recover-form").style.display = "none";
+                    document.getElementById("onboarding-link").style.display = "none";
+                    document.getElementById("checkout-state").style.display = "block";
+                    await loadCheckout();
+                } else {
+                    document.getElementById("code-error").textContent =
+                        data.error || "Verification failed. Please try again.";
+                    btn.disabled = false;
+                    btn.textContent = "Verify";
+                }
+            } catch (error) {
+                showError("Something went wrong. Please try again.");
+                btn.disabled = false;
+                btn.textContent = "Verify";
+            }
+        }
+
+        async function loadCheckout() {
+            try {
+                if (!stripePublishableKey) {
+                    throw new Error("Stripe publishable key is not configured.");
+                }
+                if (!stripeInstance) {
+                    stripeInstance = Stripe(stripePublishableKey);
+                }
+
+                const csrfToken = getCookie("csrftoken");
+                const response = await fetch(
+                    "{% url 'recovery:recover_checkout_session' %}",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrfToken,
+                        },
+                        body: JSON.stringify({}),
+                    },
+                );
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                checkout = await stripeInstance.initEmbeddedCheckout({
+                    clientSecret: data.clientSecret,
+                });
+
+                checkout.mount("#stripe-checkout-mount");
+
+                const loadingEl = document.getElementById("checkout-loading");
+                if (loadingEl) loadingEl.style.display = "none";
+            } catch (error) {
+                console.error(error);
+                showError("Failed to load payment form. Please try again.");
+            }
+        }
+
+        // Allow Enter key to submit on each input
+        document.getElementById("identifier").addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                sendRecoveryCode();
+            }
+        });
+        document.getElementById("verification-code").addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                verifyRecoveryCode();
+            }
+        });
+    </script>
+</body>
+</html>

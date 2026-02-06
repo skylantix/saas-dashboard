@@ -33,5 +33,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('oidc/', include('mozilla_django_oidc.urls')),
     path('onboarding/', include('onboarding.urls')),
+    path('recovery/', include('onboarding.urls_recovery')),
     path('', include('dashboard.urls')),
 ]

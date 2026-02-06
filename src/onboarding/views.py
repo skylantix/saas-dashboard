@@ -948,3 +948,274 @@ def _handle_payment_failed(invoice):
     logger.info(
         f"Payment failed for subscription {subscription_id}, user {profile.user.username}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Account recovery
+# ---------------------------------------------------------------------------
+
+
+def recover(request):
+    """Render the account recovery page."""
+    return render(request, "onboarding/recover.html", {
+        "stripe_publishable_key": settings.STRIPE_PUBLISHABLE_KEY,
+    })
+
+
+@require_POST
+def recover_send_code(request):
+    """Send a 6-digit recovery code to the user's email via Mailgun.
+
+    Accepts either a username or an email address.  Always returns
+    ``{"sent": true}`` regardless of whether the identifier corresponds
+    to a recoverable account, to prevent account enumeration.
+    """
+    import random
+    import time
+
+    try:
+        data = json.loads(request.body)
+        identifier = data.get("identifier", "").strip().lower()
+
+        if not identifier:
+            return JsonResponse(
+                {"error": "Username or email is required"}, status=400
+            )
+
+        # Look up the user by email or username – never reveal whether it exists.
+        from dashboard.models import UserProfile
+
+        profile = None
+        try:
+            if "@" in identifier:
+                profile = UserProfile.objects.select_related("user").get(
+                    user__email__iexact=identifier
+                )
+            else:
+                profile = UserProfile.objects.select_related("user").get(
+                    user__username__iexact=identifier
+                )
+        except UserProfile.DoesNotExist:
+            pass
+
+        # Send a code for any existing account with a Keycloak identity.
+        # The subscription status is checked later at the verify step.
+        if profile and profile.keycloak_id:
+            email = profile.user.email
+            code = f"{random.randint(0, 999999):06d}"
+
+            request.session["recover_verification"] = {
+                "identifier": identifier,
+                "email": email,
+                "code": code,
+                "timestamp": time.time(),
+            }
+
+            response = requests.post(
+                f"https://api.mailgun.net/v3/{settings.MAILGUN_DOMAIN}/messages",
+                auth=("api", settings.MAILGUN_API_KEY),
+                data={
+                    "from": f"Skylantix <no-reply@{settings.MAILGUN_DOMAIN}>",
+                    "to": email,
+                    "subject": "Your Skylantix recovery code",
+                    "text": (
+                        f"Your recovery code is: {code}\n\n"
+                        "This code expires in 10 minutes."
+                    ),
+                    "html": (
+                        '<div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">'
+                        '<h2 style="color: #6366f1;">Skylantix</h2>'
+                        "<p>Your recovery code is:</p>"
+                        f'<p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1e293b;">{code}</p>'
+                        '<p style="color: #64748b; font-size: 14px;">This code expires in 10 minutes.</p>'
+                        "</div>"
+                    ),
+                },
+            )
+
+            if response.status_code not in (200, 201):
+                logger.error(
+                    "Mailgun send failed for recovery: %s - %s",
+                    response.status_code,
+                    response.text,
+                )
+
+        # Always return success to avoid leaking account existence.
+        return JsonResponse({"sent": True})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    except Exception as e:
+        logger.error("Recovery send-code error: %s", e)
+        return JsonResponse({"error": "Something went wrong"}, status=500)
+
+
+@require_POST
+def recover_verify_code(request):
+    """Verify the recovery code and re-enable the Keycloak account."""
+    import time
+
+    try:
+        data = json.loads(request.body)
+        code = data.get("code", "").strip()
+        identifier = data.get("identifier", "").strip().lower()
+
+        if not code or not identifier:
+            return JsonResponse(
+                {"error": "Code and username/email are required"}, status=400
+            )
+
+        verification = request.session.get("recover_verification")
+
+        if not verification:
+            return JsonResponse(
+                {
+                    "recovered": False,
+                    "error": "No recovery in progress. Please request a new code.",
+                }
+            )
+
+        if verification["identifier"] != identifier:
+            return JsonResponse(
+                {
+                    "recovered": False,
+                    "error": "Account mismatch. Please request a new code.",
+                }
+            )
+
+        # 10-minute expiry
+        if time.time() - verification["timestamp"] > 600:
+            return JsonResponse(
+                {
+                    "recovered": False,
+                    "error": "Code expired. Please request a new code.",
+                }
+            )
+
+        if verification["code"] != code:
+            return JsonResponse({"recovered": False, "error": "Incorrect code"})
+
+        # Code is valid – re-enable the Keycloak user.
+        from dashboard.models import UserProfile
+        from skylantix_dash.keycloak import keycloak_admin
+
+        # Use the email that was resolved and stored at send-code time.
+        email = verification["email"]
+        try:
+            profile = UserProfile.objects.select_related("user").get(
+                user__email__iexact=email
+            )
+        except UserProfile.DoesNotExist:
+            return JsonResponse(
+                {"recovered": False, "error": "Account not found"}, status=404
+            )
+
+        if not profile.keycloak_id:
+            return JsonResponse(
+                {"recovered": False, "error": "Account cannot be recovered"},
+                status=400,
+            )
+
+        # Re-check that the account is actually delinquent before re-enabling.
+        if profile.subscription_status not in ("canceled", "past_due"):
+            del request.session["recover_verification"]
+            return JsonResponse(
+                {
+                    "recovered": False,
+                    "error": "Your account is already active. You can log in normally.",
+                },
+                status=400,
+            )
+
+        enabled = keycloak_admin.set_user_enabled(profile.keycloak_id, True)
+        if not enabled:
+            logger.error(
+                "Failed to re-enable Keycloak user %s during recovery",
+                profile.keycloak_id,
+            )
+            return JsonResponse(
+                {"recovered": False, "error": "Failed to recover account. Please try again."},
+                status=500,
+            )
+
+        # Retrieve the old subscription's line-item prices from Stripe so we
+        # can pre-fill the resubscription checkout with the same plan.
+        line_items = []
+        if profile.stripe_subscription_id:
+            try:
+                old_sub = stripe.Subscription.retrieve(
+                    profile.stripe_subscription_id,
+                    expand=["items.data.price"],
+                )
+                for item in old_sub["items"]["data"]:
+                    price_id = item["price"]["id"]
+                    line_items.append({"price": price_id, "quantity": item.get("quantity", 1)})
+            except stripe.error.StripeError as e:
+                logger.warning(
+                    "Could not retrieve old subscription %s: %s",
+                    profile.stripe_subscription_id,
+                    e,
+                )
+
+        # Store recovery context for the checkout-session step.
+        request.session["recovery"] = {
+            "email": email,
+            "username": profile.user.username,
+            "first_name": profile.user.first_name,
+            "last_name": profile.user.last_name,
+            "line_items": line_items,
+        }
+
+        # Clean up verification session
+        del request.session["recover_verification"]
+
+        logger.info(
+            "Recovered account for user %s (keycloak %s)",
+            profile.user.username,
+            profile.keycloak_id,
+        )
+
+        return JsonResponse({"recovered": True})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    except Exception as e:
+        logger.error("Recovery verify-code error: %s", e)
+        return JsonResponse({"error": "Something went wrong"}, status=500)
+
+
+@require_POST
+def recover_checkout_session(request):
+    """Create a Stripe Checkout Session to resubscribe after recovery.
+
+    Uses the line items stored in the session by ``recover_verify_code``.
+    """
+    recovery = request.session.get("recovery")
+    if not recovery or not recovery.get("line_items"):
+        return JsonResponse(
+            {"error": "No recovery data found. Please start over."}, status=400
+        )
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            ui_mode="embedded",
+            mode="subscription",
+            line_items=recovery["line_items"],
+            customer_email=recovery["email"],
+            return_url=request.build_absolute_uri("/onboarding/success/")
+            + "?session_id={CHECKOUT_SESSION_ID}",
+            metadata={
+                "first_name": recovery.get("first_name", ""),
+                "last_name": recovery.get("last_name", ""),
+                "username": recovery.get("username", ""),
+            },
+        )
+
+        return JsonResponse({"clientSecret": checkout_session.client_secret})
+
+    except stripe.error.StripeError as e:
+        logger.error("Recovery checkout session error: %s", e)
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.error("Recovery checkout session error: %s", e)
+        return JsonResponse({"error": "Something went wrong"}, status=500)

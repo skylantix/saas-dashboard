@@ -124,7 +124,7 @@ def notify_subscription_canceled(self, email, first_name):
             "Your Skylantix subscription has been canceled and your access "
             "has been suspended.\n\n"
             "If this was a mistake or you'd like to resubscribe, visit "
-            "https://dash.skylantix.com to get started again.\n\n"
+            "https://dash.skylantix.com/recovery/ to recover your account.\n\n"
             "If you have any questions, reply to this email and we'll help.\n\n"
             "— The Skylantix Team"
         ),
@@ -135,8 +135,8 @@ def notify_subscription_canceled(self, email, first_name):
             "<p>Your Skylantix subscription has been canceled and your "
             "access has been suspended.</p>"
             "<p>If this was a mistake or you'd like to resubscribe, "
-            '<a href="https://dash.skylantix.com" style="color: #6366f1;">'
-            "visit your dashboard</a> to get started again.</p>"
+            '<a href="https://dash.skylantix.com/recovery/" style="color: #6366f1;">'
+            "recover your account</a> to get started again.</p>"
             "<p>If you have any questions, just reply to this email.</p>"
             '<p style="color: #64748b; font-size: 14px; margin-top: 24px;">'
             "&mdash; The Skylantix Team</p>"
@@ -163,8 +163,8 @@ def notify_payment_failed(self, email, first_name):
             f"Hi {name},\n\n"
             "We were unable to process your latest payment. Your access has "
             "been temporarily suspended until this is resolved.\n\n"
-            "Please update your payment method at "
-            "https://dash.skylantix.com to restore access.\n\n"
+            "Please recover your account at "
+            "https://dash.skylantix.com/recovery/ to restore access.\n\n"
             "If you believe this is an error, reply to this email and "
             "we'll sort it out.\n\n"
             "— The Skylantix Team"
@@ -175,8 +175,8 @@ def notify_payment_failed(self, email, first_name):
             f"<p>Hi {name},</p>"
             "<p>We were unable to process your latest payment. Your access "
             "has been temporarily suspended until this is resolved.</p>"
-            "<p>Please <a href=\"https://dash.skylantix.com\" "
-            'style="color: #6366f1;">update your payment method</a> '
+            '<p>Please <a href="https://dash.skylantix.com/recovery/" '
+            'style="color: #6366f1;">recover your account</a> '
             "to restore access.</p>"
             "<p>If you believe this is an error, just reply to this email.</p>"
             '<p style="color: #64748b; font-size: 14px; margin-top: 24px;">'
