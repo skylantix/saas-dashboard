@@ -174,6 +174,10 @@ class Instance(models.Model):
     )
     allocated_seats = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    auto_allocate = models.BooleanField(
+        default=True,
+        help_text="Include in automatic seat allocation. Disable for beta/testing instances.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -230,35 +234,110 @@ class UserProfile(models.Model):
         return self.subscription_status == "active"
 
     def get_subscribed_products(self):
-        """
-        Get products the user is subscribed to based on their Stripe subscription.
+        """Get products the user is subscribed to from the local cache.
+
+        The cache is populated by webhook handlers via update_subscription_items().
 
         Returns:
             QuerySet[Product]: Products the user has access to
         """
-        if not self.stripe_subscription_id:
+        if self.subscription_status not in ("active", "trialing", "past_due"):
             return Product.objects.none()
 
-        import stripe
-        from django.conf import settings
+        return Product.objects.filter(
+            subscription_items__profile=self, is_active=True
+        ).distinct()
+
+    def update_subscription_items(self, stripe_line_items):
+        """Replace the local subscription-item cache from Stripe line items.
+
+        Called by webhook handlers which already have the subscription data,
+        avoiding an extra Stripe API round-trip.
+
+        Args:
+            stripe_line_items: Iterable of Stripe SubscriptionItem objects or
+                dicts.  Each must contain a ``price`` with an ``id``.
+                Pass an empty list to clear all cached items.
+        """
+        # Extract (price_id, quantity) from various Stripe payload shapes.
+        price_data = []
+        for item in stripe_line_items:
+            if isinstance(item, dict):
+                price = item.get("price")
+                quantity = item.get("quantity", 1)
+            else:
+                price = getattr(item, "price", None)
+                quantity = getattr(item, "quantity", 1)
+
+            if price is None:
+                continue
+
+            if isinstance(price, dict):
+                price_id = price.get("id")
+            elif isinstance(price, str):
+                price_id = price
+            else:
+                price_id = getattr(price, "id", None)
+
+            if price_id:
+                price_data.append((price_id, quantity))
+
+        # Resolve price IDs → product IDs in a single query.
+        all_price_ids = [p[0] for p in price_data]
+        price_to_product = dict(
+            ProductPrice.objects.filter(
+                stripe_price_id__in=all_price_ids
+            ).values_list("stripe_price_id", "product_id")
+        )
+
+        with transaction.atomic():
+            self.subscription_items.all().delete()
+
+            for price_id, quantity in price_data:
+                product_id = price_to_product.get(price_id)
+                if product_id:
+                    # Import here to avoid circular ref at class-body level.
+                    UserSubscriptionItem.objects.create(
+                        profile=self,
+                        product_id=product_id,
+                        stripe_price_id=price_id,
+                        quantity=quantity,
+                    )
+                else:
+                    logger.warning(
+                        "No product found for Stripe price %s (user %s)",
+                        price_id,
+                        self.user.username,
+                    )
+
+    def refresh_subscription_items_from_stripe(self):
+        """Fetch current subscription items from the Stripe API and update
+        the local cache.
+
+        Useful for back-filling existing profiles or as a manual recovery
+        tool.  Normal operation should rely on webhook-driven updates.
+        """
+        if not self.stripe_subscription_id:
+            self.subscription_items.all().delete()
+            return
+
+        import stripe as _stripe
+        from django.conf import settings as _settings
 
         try:
-            stripe.api_key = settings.STRIPE_SECRET_KEY
-            subscription = stripe.Subscription.retrieve(
+            _stripe.api_key = _settings.STRIPE_SECRET_KEY
+            subscription = _stripe.Subscription.retrieve(
                 self.stripe_subscription_id, expand=["items.data.price"]
             )
-
-            if subscription.status not in ["active", "trialing", "past_due"]:
-                return Product.objects.none()
-
-            price_ids = [item.price.id for item in subscription.items.data]
-            return Product.objects.filter(
-                prices__stripe_price_id__in=price_ids, is_active=True
-            ).distinct()
-
+            self.subscription_status = subscription.status
+            self.save(update_fields=["subscription_status"])
+            self.update_subscription_items(subscription["items"]["data"])
         except Exception as e:
-            logger.error(f"Error fetching subscription products: {e}")
-            return Product.objects.none()
+            logger.error(
+                "Error refreshing subscription items from Stripe for %s: %s",
+                self.user.username,
+                e,
+            )
 
     def get_product_slugs(self):
         """Get list of product slugs user is subscribed to."""
@@ -352,6 +431,7 @@ class UserProfile(models.Model):
                 .filter(
                     product=product,
                     is_active=True,
+                    auto_allocate=True,
                     allocated_seats__lt=F("allocation_cap"),
                 )
                 .prefetch_related("groups")
@@ -460,3 +540,31 @@ class UserProfile(models.Model):
         for product in accessed_products:
             if product not in subscribed_products:
                 self.remove_instance_access(product)
+
+
+class UserSubscriptionItem(models.Model):
+    """Local cache of a Stripe subscription line item.
+
+    Updated by webhook handlers so that get_subscribed_products() never
+    needs to hit the Stripe API at request time.
+    """
+
+    profile = models.ForeignKey(
+        UserProfile, on_delete=models.CASCADE, related_name="subscription_items"
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="subscription_items"
+    )
+    stripe_price_id = models.CharField(max_length=255)
+    quantity = models.PositiveIntegerField(default=1)
+
+    objects: models.Manager["UserSubscriptionItem"]
+
+    class Meta:
+        unique_together = ["profile", "stripe_price_id"]
+
+    def __str__(self):
+        return (
+            f"{self.profile.user.username} \u2192 {self.product.name}"
+            f" ({self.stripe_price_id})"
+        )

@@ -279,7 +279,7 @@ def send_verification_code(request):
             f"https://api.mailgun.net/v3/{settings.MAILGUN_DOMAIN}/messages",
             auth=("api", settings.MAILGUN_API_KEY),
             data={
-                "from": f"Skylantix <noreply@{settings.MAILGUN_DOMAIN}>",
+                "from": f"Skylantix <no-reply@{settings.MAILGUN_DOMAIN}>",
                 "to": email,
                 "subject": "Your Skylantix verification code",
                 "text": f"Your verification code is: {code}\n\nThis code expires in 10 minutes.",
@@ -618,10 +618,141 @@ def stripe_webhook(request):
     return HttpResponse(status=200)
 
 
-def _handle_checkout_completed(session):
-    """Handle checkout.session.completed event."""
-    from dashboard.models import UserProfile
+def _extract_subscription_items(subscription_data):
+    """Extract line items from a Stripe subscription object or dict.
+
+    Works with both expanded Stripe objects (from API calls) and raw dicts
+    (from webhook payloads).
+
+    Returns:
+        list: Subscription item objects/dicts, or empty list.
+    """
+    if isinstance(subscription_data, str):
+        return []  # Unexpanded subscription ID
+    try:
+        return subscription_data["items"]["data"]
+    except (KeyError, TypeError):
+        return []
+
+
+def _extract_session_email(session, metadata):
+    """Try multiple sources for the customer email.
+
+    Stripe payloads differ between real checkouts, CLI triggers, and
+    expanded-vs-unexpanded objects, so we check several locations.
+
+    Returns:
+        str or None: The customer email if found.
+    """
+    if session.customer_details and session.customer_details.email:
+        return session.customer_details.email
+    if getattr(session, "customer_email", None):
+        return session.customer_email
+    if isinstance(session.customer, dict) and session.customer.get("email"):
+        return session.customer.get("email")
+    if session.customer and hasattr(session.customer, "email"):
+        return session.customer.email
+    if metadata.get("email"):
+        return metadata.get("email")
+    return None
+
+
+def _get_or_create_keycloak_user(email, username, first_name, last_name):
+    """Find an existing Keycloak user or create a new one.
+
+    Returns:
+        tuple: (keycloak_user_id: str, is_new_user: bool) on success.
+
+    Raises:
+        RuntimeError: If user creation fails.
+    """
     from skylantix_dash.keycloak import keycloak_admin
+
+    existing_user = keycloak_admin.get_user_by_email(email)
+    if existing_user:
+        logger.info(
+            "Keycloak: found existing user %s for email %s",
+            existing_user["id"],
+            email,
+        )
+        return existing_user["id"], False
+
+    if not username:
+        username = email.split("@")[0]
+
+    success, keycloak_user_id, error = keycloak_admin.create_user(
+        email=email,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        email_verified=True,
+        enabled=True,
+    )
+
+    if not success:
+        raise RuntimeError(
+            f"Failed to create Keycloak user for {email}: {error}"
+        )
+
+    logger.info(
+        "Keycloak: created user %s for email %s", keycloak_user_id, email
+    )
+    return keycloak_user_id, True
+
+
+def _provision_django_user(
+    email, username, first_name, last_name, keycloak_user_id, session
+):
+    """Create or update the Django User and UserProfile.
+
+    Returns:
+        UserProfile: The provisioned profile.
+    """
+    from dashboard.models import UserProfile
+
+    django_user, _ = User.objects.get_or_create(
+        username=username or email.split("@")[0],
+        defaults={
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+        },
+    )
+
+    profile, _ = UserProfile.objects.get_or_create(user=django_user)
+    profile.keycloak_id = keycloak_user_id
+    profile.stripe_customer_id = (
+        session.customer
+        if isinstance(session.customer, str)
+        else session.customer.id
+    )
+    profile.stripe_subscription_id = (
+        session.subscription
+        if isinstance(session.subscription, str)
+        else session.subscription.id
+    )
+    profile.subscription_status = "active"
+    profile.save()
+
+    return profile
+
+
+def _handle_checkout_completed(session):
+    """Handle checkout.session.completed event.
+
+    Orchestrates the critical-path provisioning steps synchronously:
+      1. Retrieve expanded Stripe session
+      2. Resolve or create the Keycloak user
+      3. Provision the Django User + UserProfile
+
+    Non-critical follow-up work is dispatched to Celery:
+      - Sending the Keycloak password-reset email
+      - Syncing instance assignments and Keycloak attributes
+    """
+    from onboarding.tasks import (
+        send_keycloak_password_reset_email,
+        sync_user_post_checkout,
+    )
 
     session = stripe.checkout.Session.retrieve(
         session["id"], expand=["subscription", "customer"]
@@ -639,22 +770,11 @@ def _handle_checkout_completed(session):
     last_name = metadata.get("last_name", "")
     username = metadata.get("username", "")
 
-    # Try multiple sources for email to handle different payload shapes (CLI vs real checkout)
-    email = None
-    if session.customer_details and session.customer_details.email:
-        email = session.customer_details.email
-    elif getattr(session, "customer_email", None):
-        email = session.customer_email
-    elif isinstance(session.customer, dict) and session.customer.get("email"):
-        email = session.customer.get("email")
-    elif session.customer and hasattr(session.customer, "email"):
-        email = session.customer.email
-    elif metadata.get("email"):
-        email = metadata.get("email")
-
+    email = _extract_session_email(session, metadata)
     if not email:
         logger.warning(
-            "Webhook checkout.session.completed: no email for session %s", session.id
+            "Webhook checkout.session.completed: no email for session %s",
+            session.id,
         )
         return
 
@@ -665,78 +785,38 @@ def _handle_checkout_completed(session):
         username,
     )
 
-    existing_user = keycloak_admin.get_user_by_email(email)
-    if existing_user:
-        keycloak_user_id = existing_user["id"]
-        logger.info(
-            "Webhook checkout.session.completed: found existing Keycloak user %s for email %s",
-            keycloak_user_id,
+    # --- Critical path: user creation + profile setup ---
+    try:
+        keycloak_user_id, is_new_user = _get_or_create_keycloak_user(
+            email, username, first_name, last_name
+        )
+    except RuntimeError:
+        logger.error(
+            "Webhook checkout.session.completed: Keycloak user creation failed for %s",
             email,
+            exc_info=True,
         )
-    else:
-        if not username:
-            username = email.split("@")[0]
+        return
 
-        success_create, keycloak_user_id, error = keycloak_admin.create_user(
-            email=email,
-            username=username,
-            first_name=first_name,
-            last_name=last_name,
-            email_verified=True,
-            enabled=True,
-        )
-
-        if not success_create:
-            logger.error(
-                "Webhook checkout.session.completed: failed to create Keycloak user for email %s: %s",
-                email,
-                error,
-            )
-            return
-
-        logger.info(
-            "Webhook checkout.session.completed: created Keycloak user %s for email %s",
-            keycloak_user_id,
-            email,
-        )
-        send_ok = keycloak_admin.send_reset_password_email(keycloak_user_id)
-        if not send_ok:
-            logger.warning(
-                "Webhook checkout.session.completed: failed to send reset email for Keycloak user %s",
-                keycloak_user_id,
-            )
-
-    # Get or create Django user
-    django_user, _ = User.objects.get_or_create(
-        username=username or email.split("@")[0],
-        defaults={
-            "email": email,
-            "first_name": first_name,
-            "last_name": last_name,
-        },
+    profile = _provision_django_user(
+        email, username, first_name, last_name, keycloak_user_id, session
     )
 
-    # Update profile
-    profile, _ = UserProfile.objects.get_or_create(user=django_user)
-    profile.keycloak_id = keycloak_user_id
-    profile.stripe_customer_id = (
-        session.customer if isinstance(session.customer, str) else session.customer.id
+    # Populate local subscription-item cache so the Celery task
+    # (and all future get_subscribed_products calls) never hits Stripe.
+    profile.update_subscription_items(
+        _extract_subscription_items(session.subscription)
     )
-    profile.stripe_subscription_id = (
-        session.subscription
-        if isinstance(session.subscription, str)
-        else session.subscription.id
-    )
-    profile.subscription_status = "active"
-    profile.save()
 
-    # Assign instances for subscribed products and sync to Keycloak
-    profile.sync_instance_assignments()
-    profile.sync_to_keycloak()
+    # --- Non-critical work: dispatch to Celery ---
+    if is_new_user:
+        send_keycloak_password_reset_email.delay(keycloak_user_id)
+
+    sync_user_post_checkout.delay(profile.pk)
 
     logger.info(
         "Webhook checkout.session.completed: processed user=%s keycloak_id=%s",
-        django_user.username,
+        profile.user.username,
         profile.keycloak_id,
     )
 
@@ -744,6 +824,7 @@ def _handle_checkout_completed(session):
 def _handle_subscription_updated(subscription):
     """Handle customer.subscription.updated event."""
     from dashboard.models import UserProfile
+    from skylantix_dash.keycloak import keycloak_admin
 
     subscription_id = subscription["id"]
     status = subscription["status"]
@@ -759,14 +840,22 @@ def _handle_subscription_updated(subscription):
     profile.subscription_status = status
     profile.save(update_fields=["subscription_status"])
 
-    if status in ["active", "trialing"]:
-        # Assign instances for subscribed products and sync to Keycloak
-        profile.sync_instance_assignments()
-        profile.sync_to_keycloak()
-    else:
-        # Sync instance assignments (will remove access for canceled products)
-        profile.sync_instance_assignments()
-        profile.sync_to_keycloak()
+    # Refresh local subscription-item cache from the webhook payload.
+    profile.update_subscription_items(_extract_subscription_items(subscription))
+
+    # Sync instance assignments and Keycloak attributes.
+    profile.sync_instance_assignments()
+    profile.sync_to_keycloak()
+
+    # Re-enable the Keycloak user if the subscription is back in good standing
+    # (e.g., payment method updated after a failure).
+    if profile.keycloak_id and status in ("active", "trialing"):
+        if keycloak_admin.set_user_enabled(profile.keycloak_id, True):
+            logger.info(
+                "Re-enabled Keycloak user %s (subscription %s)",
+                profile.keycloak_id,
+                status,
+            )
 
     logger.info(
         f"Updated subscription {subscription_id} for user {profile.user.username}"
@@ -774,25 +863,44 @@ def _handle_subscription_updated(subscription):
 
 
 def _handle_subscription_deleted(subscription):
-    """Handle customer.subscription.deleted event."""
+    """Handle customer.subscription.deleted event.
+
+    Disables the Keycloak user and kills active sessions.  Entitlements and
+    instance assignments are intentionally left intact so that re-enabling
+    the user (e.g. after resubscribing) doesn't require re-provisioning.
+    """
     from dashboard.models import UserProfile
+    from skylantix_dash.keycloak import keycloak_admin
 
     subscription_id = subscription["id"]
 
-    # Find user profile by subscription ID
     try:
         profile = UserProfile.objects.get(stripe_subscription_id=subscription_id)
     except UserProfile.DoesNotExist:
         logger.warning(f"UserProfile not found for subscription {subscription_id}")
         return
 
-    # Update subscription status
     profile.subscription_status = "canceled"
     profile.save(update_fields=["subscription_status"])
 
-    # Sync instance assignments (will remove access for all products)
-    profile.sync_instance_assignments()
-    profile.sync_to_keycloak()
+    # Clear the local subscription-item cache.
+    profile.update_subscription_items([])
+
+    # Disable user and terminate all active sessions.
+    if profile.keycloak_id:
+        keycloak_admin.set_user_enabled(profile.keycloak_id, False)
+        keycloak_admin.logout_user_sessions(profile.keycloak_id)
+        logger.info(
+            "Disabled Keycloak user %s and cleared sessions (subscription canceled)",
+            profile.keycloak_id,
+        )
+
+    # Notify the user by email.
+    from onboarding.tasks import notify_subscription_canceled
+
+    notify_subscription_canceled.delay(
+        profile.user.email, profile.user.first_name
+    )
 
     logger.info(
         f"Canceled subscription {subscription_id} for user {profile.user.username}"
@@ -800,23 +908,42 @@ def _handle_subscription_deleted(subscription):
 
 
 def _handle_payment_failed(invoice):
-    """Handle invoice.payment_failed event."""
+    """Handle invoice.payment_failed event.
+
+    Disables the Keycloak user and kills active sessions until payment is
+    resolved.  Entitlements and instance assignments are left intact.
+    """
     from dashboard.models import UserProfile
+    from skylantix_dash.keycloak import keycloak_admin
 
     subscription_id = invoice.get("subscription")
     if not subscription_id:
         return
 
-    # Find user profile
     try:
         profile = UserProfile.objects.get(stripe_subscription_id=subscription_id)
     except UserProfile.DoesNotExist:
         logger.warning(f"UserProfile not found for subscription {subscription_id}")
         return
 
-    # Update subscription status
     profile.subscription_status = "past_due"
     profile.save(update_fields=["subscription_status"])
+
+    # Disable user and terminate all active sessions.
+    if profile.keycloak_id:
+        keycloak_admin.set_user_enabled(profile.keycloak_id, False)
+        keycloak_admin.logout_user_sessions(profile.keycloak_id)
+        logger.info(
+            "Disabled Keycloak user %s and cleared sessions (payment failed)",
+            profile.keycloak_id,
+        )
+
+    # Notify the user by email.
+    from onboarding.tasks import notify_payment_failed
+
+    notify_payment_failed.delay(
+        profile.user.email, profile.user.first_name
+    )
 
     logger.info(
         f"Payment failed for subscription {subscription_id}, user {profile.user.username}"

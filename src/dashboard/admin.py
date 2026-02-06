@@ -7,7 +7,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.utils.html import format_html
 
-from .models import Instance, Product, ProductPrice, UserProfile
+from .models import Instance, Product, ProductPrice, UserProfile, UserSubscriptionItem
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +100,11 @@ class InstanceAdmin(admin.ModelAdmin):
         "allocated_seats",
         "soft_cap",
         "allocation_cap",
+        "auto_allocate",
         "is_active",
     ]
-    list_filter = ["is_active", "product"]
+    list_filter = ["is_active", "auto_allocate", "product"]
+    list_editable = ["auto_allocate"]
     search_fields = ["name", "base_url", "product__name", "groups__name"]
     readonly_fields = ["allocated_seats", "created_at"]
     filter_horizontal = ["groups"]
@@ -113,7 +115,7 @@ class InstanceAdmin(admin.ModelAdmin):
             "Capacity",
             {"fields": ("soft_cap", "allocation_cap", "hard_cap", "allocated_seats")},
         ),
-        ("Status", {"fields": ("is_active", "created_at")}),
+        ("Status", {"fields": ("is_active", "auto_allocate", "created_at")}),
     )
 
     def display_groups(self, obj):
@@ -122,9 +124,18 @@ class InstanceAdmin(admin.ModelAdmin):
     display_groups.short_description = "Groups"
 
 
+class UserSubscriptionItemInline(admin.TabularInline):
+    model = UserSubscriptionItem
+    extra = 0
+    readonly_fields = ["product", "stripe_price_id", "quantity"]
+    can_delete = False
+
+
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """Admin interface for UserProfile."""
+
+    inlines = [UserSubscriptionItemInline]
 
     list_display = [
         "user_email",
@@ -283,7 +294,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     sync_instance_assignments.short_description = "Sync instance assignments"
 
     def refresh_subscription_status(self, request, queryset):
-        """Admin action to refresh subscription status from Stripe."""
+        """Admin action to refresh subscription status and cached items from Stripe."""
         updated_count = 0
         failed_count = 0
 
@@ -292,15 +303,11 @@ class UserProfileAdmin(admin.ModelAdmin):
                 continue
 
             try:
-                subscription = stripe.Subscription.retrieve(
-                    profile.stripe_subscription_id
-                )
-                profile.subscription_status = subscription.status
-                profile.save(update_fields=["subscription_status"])
+                profile.refresh_subscription_items_from_stripe()
                 updated_count += 1
-            except stripe.error.StripeError as e:
+            except Exception as e:
                 logger.error(
-                    "Error refreshing subscription status for %s: %s",
+                    "Error refreshing subscription for %s: %s",
                     profile.user.username,
                     e,
                 )
@@ -309,7 +316,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         if updated_count > 0:
             self.message_user(
                 request,
-                f"Refreshed status for {updated_count} user(s).",
+                f"Refreshed status & items for {updated_count} user(s).",
                 messages.SUCCESS,
             )
         if failed_count > 0:
@@ -318,7 +325,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             )
 
     refresh_subscription_status.short_description = (
-        "Refresh subscription status from Stripe"
+        "Refresh subscription status & items from Stripe"
     )
 
 

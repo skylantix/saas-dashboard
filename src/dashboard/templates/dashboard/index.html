@@ -354,7 +354,7 @@
                     </svg>
                     Subscriptions
                 </a>
-                <a href="#" class="menu-item">
+                <a href="#" class="menu-item" id="changePasswordBtn" onclick="requestPasswordReset(event)">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path
                             stroke-linecap="round"
@@ -363,7 +363,7 @@
                             d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
                         />
                     </svg>
-                    Change Password
+                    <span id="changePasswordLabel">Change Password</span>
                 </a>
                 <a href="#" class="menu-item">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -482,6 +482,42 @@
                     .getElementById("menuOverlay")
                     .classList.toggle("active");
                 document.getElementById("menuPanel").classList.toggle("active");
+            }
+
+            function requestPasswordReset(e) {
+                e.preventDefault();
+                var btn = document.getElementById("changePasswordBtn");
+                var label = document.getElementById("changePasswordLabel");
+                if (btn.classList.contains("disabled")) return;
+
+                btn.classList.add("disabled");
+                label.textContent = "Sending…";
+
+                fetch("{% url 'request_password_reset' %}", {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": "{{ csrf_token }}",
+                    },
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.error) {
+                            label.textContent = data.error;
+                        } else {
+                            label.textContent = "Email sent ✓";
+                        }
+                        setTimeout(function () {
+                            label.textContent = "Change Password";
+                            btn.classList.remove("disabled");
+                        }, 4000);
+                    })
+                    .catch(function () {
+                        label.textContent = "Something went wrong";
+                        setTimeout(function () {
+                            label.textContent = "Change Password";
+                            btn.classList.remove("disabled");
+                        }, 4000);
+                    });
             }
         </script>
     </body>

@@ -1,9 +1,14 @@
+import logging
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
+
+logger = logging.getLogger(__name__)
 
 
 def home(request):
@@ -79,6 +84,32 @@ def dashboard(request):
         'services': services,
         'is_admin': is_admin,
     })
+
+
+@login_required
+@require_POST
+def request_password_reset(request):
+    """Send a Keycloak password-reset email to the logged-in user."""
+    from dashboard.models import UserProfile
+    from skylantix_dash.keycloak import keycloak_admin
+
+    profile = UserProfile.objects.filter(user=request.user).first()
+    if not profile or not profile.keycloak_id:
+        return JsonResponse(
+            {"error": "No linked account found. Please contact support."},
+            status=400,
+        )
+
+    success = keycloak_admin.send_reset_password_email(profile.keycloak_id)
+    if success:
+        logger.info("Password reset email sent for user %s", request.user.username)
+        return JsonResponse({"message": "Password reset email sent."})
+
+    logger.error("Failed to send password reset email for user %s", request.user.username)
+    return JsonResponse(
+        {"error": "Could not send email. Please try again later."},
+        status=500,
+    )
 
 
 def logout_view(request):

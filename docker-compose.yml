@@ -4,6 +4,7 @@ services:
   skylantix_dash:
     container_name: skylantix_dash
     build: .
+    image: skylantix_dash:local
     env_file:
       - .env
     networks:
@@ -12,6 +13,20 @@ services:
       - postgres
     ports:
       - ${TAILSCALE_IP}:8000:8000
+
+  celery_worker:
+    container_name: skylantix_celery
+    image: skylantix_dash:local
+    command: celery -A skylantix_dash worker --loglevel=info
+    working_dir: /app/src
+    env_file:
+      - .env
+    networks:
+      - db-net
+    depends_on:
+      - skylantix_dash
+      - redis
+      - postgres
 
   postgres:
     image: postgres:18-alpine
@@ -22,8 +37,19 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     networks:
       - db-net
+ #   volumes:
+ #     - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8-alpine
+    container_name: skylantix_redis
+    networks:
+      - db-net
 
 networks:
   db-net:
     name: db-net
     driver: bridge
+
+#volumes:
+#  postgres_data:

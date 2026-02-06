@@ -141,6 +141,36 @@ class KeycloakAdmin:
                                   json=['UPDATE_PASSWORD'])
         return response.status_code == 204
 
+    def set_user_enabled(self, user_id, enabled):
+        """Enable or disable a Keycloak user.
+
+        Args:
+            user_id: Keycloak user ID
+            enabled: True to enable, False to disable
+
+        Returns:
+            bool: True if the update was successful
+        """
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+
+        user['enabled'] = enabled
+        response = self._request('PUT', f'/users/{user_id}', json=user)
+        return response.status_code == 204
+
+    def logout_user_sessions(self, user_id):
+        """Terminate all active sessions for a user.
+
+        Args:
+            user_id: Keycloak user ID
+
+        Returns:
+            bool: True if successful
+        """
+        response = self._request('POST', f'/users/{user_id}/logout')
+        return response.status_code == 204
+
     def delete_user(self, user_id):
         """Delete a user."""
         response = self._request('DELETE', f'/users/{user_id}')
@@ -196,8 +226,10 @@ class KeycloakAdmin:
         existing_attributes = {k: v for k, v in existing_attributes.items() if v}
 
         # Build full user representation for PUT (avoid wiping username, email, etc.)
-        # Keycloak may ignore or reject some read-only fields; we send back what we got
-        user_payload = {k: v for k, v in user.items() if k != 'attributes'}
+        # Strip fields that can trigger side effects (emails, credential resets)
+        # when echoed back -- we only intend to modify custom attributes here.
+        side_effect_fields = {'attributes', 'requiredActions', 'credentials'}
+        user_payload = {k: v for k, v in user.items() if k not in side_effect_fields}
         user_payload['attributes'] = existing_attributes
 
         response = self._request('PUT', f'/users/{user_id}', json=user_payload)
