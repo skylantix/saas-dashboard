@@ -1,6 +1,6 @@
 import logging
 
-from django.conf import settings
+from django.conf import settings  # pyright: ignore[reportMissingImports]
 from django.contrib.auth.models import Group
 from django.db import models, transaction
 from django.db.models import F, Value
@@ -31,7 +31,24 @@ class Product(models.Model):
         unique=True,
         help_text='Used for entitlements (e.g., "nextcloud")',
     )
+    stripe_product_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text='Stripe product ID (e.g., "prod_xxx"). Used to validate webhook payloads.',
+    )
     description = models.TextField(blank=True)
+    dashboard_name = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text='Display name on the user dashboard (falls back to name if blank)',
+    )
+    dashboard_description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Description shown on the user dashboard (falls back to description if blank)",
+    )
     icon = models.CharField(
         max_length=64, blank=True, help_text="Icon identifier for frontend"
     )
@@ -112,6 +129,29 @@ class Product(models.Model):
         price = self.prices.filter(billing_period="annual", is_active=True).first()
         return price.amount if price else None
 
+    def get_provisioner(self, instance=None):
+        """Load and return the provisioner backend for this product.
+
+        Looks up the provisioner class from the registry in
+        :mod:`dashboard.provisioners.registry` using the product's slug.
+
+        Args:
+            instance: Optional :class:`Instance` to pass to the provisioner.
+
+        Returns:
+            A :class:`~dashboard.provisioners.base.BaseProvisioner` instance.
+        """
+        from django.utils.module_loading import import_string
+
+        from dashboard.provisioners.registry import (
+            DEFAULT_PROVISIONER,
+            PRODUCT_PROVISIONERS,
+        )
+
+        backend_path = PRODUCT_PROVISIONERS.get(self.slug, DEFAULT_PROVISIONER)
+        klass = import_string(backend_path)
+        return klass(product=self, instance=instance)
+
 
 class ProductPrice(models.Model):
     """
@@ -177,6 +217,12 @@ class Instance(models.Model):
     auto_allocate = models.BooleanField(
         default=True,
         help_text="Include in automatic seat allocation. Disable for beta/testing instances.",
+    )
+    api_key = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="API key for provisioner backends that need one (URL comes from base_url above)",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -254,12 +300,16 @@ class UserProfile(models.Model):
         Called by webhook handlers which already have the subscription data,
         avoiding an extra Stripe API round-trip.
 
+        Validates that the Stripe product ID on each line item matches the
+        ``stripe_product_id`` configured on the Django Product (if set).
+
         Args:
             stripe_line_items: Iterable of Stripe SubscriptionItem objects or
                 dicts.  Each must contain a ``price`` with an ``id``.
                 Pass an empty list to clear all cached items.
         """
-        # Extract (price_id, quantity) from various Stripe payload shapes.
+        # Extract (price_id, stripe_product_id, quantity) from various
+        # Stripe payload shapes.
         price_data = []
         for item in stripe_line_items:
             if isinstance(item, dict):
@@ -274,29 +324,56 @@ class UserProfile(models.Model):
 
             if isinstance(price, dict):
                 price_id = price.get("id")
+                stripe_product_id = price.get("product", "")
             elif isinstance(price, str):
                 price_id = price
+                stripe_product_id = ""
             else:
                 price_id = getattr(price, "id", None)
+                stripe_product_id = getattr(price, "product", "")
 
             if price_id:
-                price_data.append((price_id, quantity))
+                price_data.append((price_id, stripe_product_id, quantity))
 
-        # Resolve price IDs → product IDs in a single query.
+        # Resolve price IDs → Products in a single query.
         all_price_ids = [p[0] for p in price_data]
         price_to_product = dict(
             ProductPrice.objects.filter(
                 stripe_price_id__in=all_price_ids
-            ).values_list("stripe_price_id", "product_id")
+            ).select_related("product").values_list(
+                "stripe_price_id", "product_id"
+            )
+        )
+
+        # Build a product_id → stripe_product_id lookup for validation.
+        product_ids = set(price_to_product.values())
+        product_stripe_ids = dict(
+            Product.objects.filter(
+                pk__in=product_ids
+            ).exclude(
+                stripe_product_id=""
+            ).values_list("pk", "stripe_product_id")
         )
 
         with transaction.atomic():
             self.subscription_items.all().delete()
 
-            for price_id, quantity in price_data:
+            for price_id, stripe_prod_id, quantity in price_data:
                 product_id = price_to_product.get(price_id)
                 if product_id:
-                    # Import here to avoid circular ref at class-body level.
+                    # Validate: if the Django Product has a stripe_product_id
+                    # configured, check it matches what Stripe sent.
+                    expected = product_stripe_ids.get(product_id)
+                    if expected and stripe_prod_id and expected != stripe_prod_id:
+                        logger.warning(
+                            "Stripe product mismatch for price %s (user %s): "
+                            "expected %s, got %s",
+                            price_id,
+                            self.user.username,
+                            expected,
+                            stripe_prod_id,
+                        )
+
                     UserSubscriptionItem.objects.create(
                         profile=self,
                         product_id=product_id,
@@ -322,7 +399,7 @@ class UserProfile(models.Model):
             return
 
         import stripe as _stripe
-        from django.conf import settings as _settings
+        from django.conf import settings as _settings  # pyright: ignore[reportMissingImports]
 
         try:
             _stripe.api_key = _settings.STRIPE_SECRET_KEY
@@ -403,8 +480,14 @@ class UserProfile(models.Model):
 
     def ensure_instance_assignment(self, product: Product) -> bool:
         """
-        Ensure user has an instance assigned for a product that requires one.
-        Adds user to instance group and syncs to Keycloak.
+        Ensure user is provisioned for a product.
+
+        For products that require an instance, this selects an instance with
+        available capacity, increments its seat count, and delegates to the
+        product's provisioner backend to set up user access.
+
+        For standalone products, the provisioner is called directly without
+        instance assignment.
 
         The entire check-then-allocate sequence runs inside a single atomic
         block with a ``SELECT FOR UPDATE`` on the profile row.  This
@@ -412,13 +495,15 @@ class UserProfile(models.Model):
         double-allocation.
 
         Args:
-            product: The product to assign an instance for
+            product: The product to provision the user for
 
         Returns:
-            bool: True if assigned/updated, False if no change or no capacity
+            bool: True if provisioned, False if no change or no capacity
         """
         if not product.requires_instance:
-            return False
+            # Standalone product -- delegate directly to provisioner
+            provisioner = product.get_provisioner()
+            return provisioner.provision_user(self)
 
         with transaction.atomic():
             # Lock the profile row to serialize per-user assignments.
@@ -458,38 +543,30 @@ class UserProfile(models.Model):
                 allocated_seats=F("allocated_seats") + 1
             )
 
-            # Add user to all instance groups
-            for group in instance.groups.all():
-                self.user.groups.add(group)
-
-                # Sync to Keycloak group
-                if self.keycloak_id:
-                    from skylantix_dash.keycloak import keycloak_admin
-
-                    kc_group = keycloak_admin.get_group_by_name(group.name)
-                    if kc_group:
-                        keycloak_admin.add_user_to_group(
-                            self.keycloak_id, kc_group["id"]
-                        )
-                        logger.info(
-                            "Added user %s to Keycloak group %s",
-                            self.user.username,
-                            group.name,
-                        )
+            # Delegate to the product's provisioner backend
+            provisioner = product.get_provisioner(instance=instance)
+            provisioner.provision_user(self)
 
             return True
 
     def remove_instance_access(self, product: Product) -> bool:
         """
-        Remove user's instance access for a product.
-        Decrements instance allocated_seats when user is removed from an instance.
+        Remove user's access for a product.
+
+        For instance-based products, delegates to the provisioner backend
+        for each instance the user is assigned to and decrements the seat
+        count.  For standalone products, calls the provisioner directly.
 
         Args:
-            product: The product to remove instance access for
+            product: The product to remove access for
 
         Returns:
             bool: True if something changed
         """
+        if not product.requires_instance:
+            provisioner = product.get_provisioner()
+            return provisioner.deprovision_user(self)
+
         changed = False
 
         user_group_ids = list(self.user.groups.values_list("id", flat=True))
@@ -500,28 +577,9 @@ class UserProfile(models.Model):
         )
 
         for instance in instances:
-            user_was_in_instance = False
-            for group in instance.groups.all():
-                if group in self.user.groups.all():
-                    self.user.groups.remove(group)
-                    changed = True
-                    user_was_in_instance = True
-
-                    if self.keycloak_id:
-                        from skylantix_dash.keycloak import keycloak_admin
-
-                        kc_group = keycloak_admin.get_group_by_name(group.name)
-                        if kc_group:
-                            keycloak_admin.remove_user_from_group(
-                                self.keycloak_id, kc_group["id"]
-                            )
-                            logger.info(
-                                "Removed user %s from Keycloak group %s",
-                                self.user.username,
-                                group.name,
-                            )
-
-            if user_was_in_instance:
+            provisioner = product.get_provisioner(instance=instance)
+            if provisioner.deprovision_user(self):
+                changed = True
                 Instance.objects.filter(pk=instance.pk).update(
                     allocated_seats=Greatest(Value(0), F("allocated_seats") - 1)
                 )
@@ -530,17 +588,19 @@ class UserProfile(models.Model):
 
     def sync_instance_assignments(self):
         """
-        Sync instance assignments based on subscribed products.
-        Assigns instances for new products, removes access for canceled ones.
+        Sync product access based on subscribed products.
+
+        Provisions all subscribed products (both instance-based and
+        standalone) via their provisioner backends, and removes access
+        for products no longer subscribed.
         """
         subscribed_products = self.get_subscribed_products()
 
-        # Assign instances for products that need them
-        for product in subscribed_products.filter(requires_instance=True):
+        # Provision all subscribed products via their backends
+        for product in subscribed_products:
             self.ensure_instance_assignment(product)
 
-        # Remove access for products no longer subscribed
-        # Get all products user has instance access to
+        # Remove access for instance-based products no longer subscribed
         user_group_ids = list(self.user.groups.values_list("id", flat=True))
         accessed_products = Product.objects.filter(
             instances__groups__id__in=user_group_ids, requires_instance=True

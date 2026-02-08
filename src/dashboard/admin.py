@@ -39,7 +39,20 @@ class ProductAdmin(admin.ModelAdmin):
     ordering = ["page", "display_order"]
     inlines = [ProductPriceInline]
     fieldsets = (
-        (None, {"fields": ("name", "slug", "description", "icon")}),
+        (
+            None,
+            {
+                "fields": (
+                    "name",
+                    "slug",
+                    "stripe_product_id",
+                    "description",
+                    "dashboard_name",
+                    "dashboard_description",
+                    "icon",
+                )
+            },
+        ),
         (
             "Display Settings",
             {
@@ -109,7 +122,7 @@ class InstanceAdmin(admin.ModelAdmin):
     readonly_fields = ["allocated_seats", "created_at"]
     filter_horizontal = ["groups"]
     fieldsets = (
-        (None, {"fields": ("product", "name", "base_url")}),
+        (None, {"fields": ("product", "name", "base_url", "api_key")}),
         ("Access Control", {"fields": ("groups",)}),
         (
             "Capacity",

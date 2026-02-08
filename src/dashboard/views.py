@@ -55,10 +55,10 @@ def dashboard(request):
     for instance in instances:
         services.append({
             'type': instance.product.slug,
-            'name': instance.product.name,
+            'name': instance.product.dashboard_name or instance.product.name,
             'instance_name': instance.name.title(),
             'url': instance.base_url,
-            'description': instance.product.description,
+            'description': instance.product.dashboard_description or instance.product.description,
             'icon': instance.product.icon,
         })
 
@@ -71,18 +71,25 @@ def dashboard(request):
         if product.standalone_url:
             services.append({
                 'type': product.slug,
-                'name': product.name,
+                'name': product.dashboard_name or product.name,
                 'instance_name': product.standalone_url.replace('https://', '').split('/')[0],
                 'url': product.standalone_url,
-                'description': product.description,
+                'description': product.dashboard_description or product.description,
                 'icon': product.icon,
             })
+
+    show_admin_app = (
+        is_admin
+        or request.user.is_superuser
+        or request.user.is_staff
+    )
 
     return render(request, 'dashboard/index.html', {
         'user': request.user,
         'profile': profile,
         'services': services,
         'is_admin': is_admin,
+        'show_admin_app': show_admin_app,
     })
 
 
